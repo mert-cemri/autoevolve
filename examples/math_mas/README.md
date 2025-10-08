@@ -20,8 +20,7 @@ OpenEvolve optimizes:
 ### 1. Install Dependencies
 
 ```bash
-# Install OpenEvolve in development mode
-cd /Users/mertcemri/Desktop/research/autoevolve
+# Be in the main code
 pip install -e ".[dev]"
 
 # Install additional dependencies for this example
