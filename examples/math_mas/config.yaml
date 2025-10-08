@@ -75,13 +75,13 @@ database:
   # Feature dimensions for MAP-Elites grid
   # These create a diversity-quality tradeoff space
   feature_dimensions:
-    - "accuracy"        # Correctness on test problems
-    - "completion_rate" # Percentage of problems attempted
+    - "accuracy"         # Correctness on test problems
+    - "avg_llm_calls"    # Efficiency (fewer calls = more efficient)
 
   # Feature bins for grid granularity
   feature_bins:
     accuracy: 10
-    completion_rate: 5
+    avg_llm_calls: 8
 
   # Selection strategy
   elite_selection_ratio: 0.2

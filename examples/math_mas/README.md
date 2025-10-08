@@ -96,60 +96,8 @@ Key configuration options in `config.yaml`:
 - `parallel_evaluations: 4` - Run 4 evaluations concurrently
 - `timeout: 600` - 10 minute timeout per evaluation
 
-### LLM Models (NEW: GPT-5!)
-- **Primary**: GPT-5 (80% weight) - For main evolution mutations
-- **Secondary**: GPT-5-mini (20% weight) - For diversity
-- Both evolution and agents use OpenAI API directly (just need OPENAI_API_KEY)
 
-## What Gets Evolved
 
-The code between `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END` markers is evolved:
-
-1. **Agent System Prompts**:
-   - `SOLVER_PROMPT` - How the solver approaches problems
-   - `VERIFIER_PROMPT` - Verification criteria and feedback format
-   - `REVISER_PROMPT` - Revision strategies
-   - `REFINER_PROMPT` - Final polishing approach
-
-2. **Communication Protocol**:
-   - `MAX_REVISION_ROUNDS` - Number of verification loops
-   - `USE_REFINER` - Whether to use final refinement
-   - `REFINER_THRESHOLD` - Confidence threshold for refinement
-
-3. **Agent Functions**:
-   - `solver_agent()`, `verifier_agent()`, `reviser_agent()`, `refiner_agent()`
-   - `multi_agent_solve()` - Main coordination logic
-   - `extract_decision()` - Parsing verifier responses
-   - `extract_boxed_answer()` - Answer extraction
-
-## Evaluation Metrics
-
-The system is evaluated on:
-- **Accuracy**: Correctness on math problems (using Math500 dataset)
-- **Completion Rate**: Percentage of problems attempted
-- **Time Efficiency**: Average time per problem
-- **Combined Score**: Weighted combination (70% accuracy, 20% completion, 10% speed)
-
-## Output
-
-Results are saved to `examples/math_mas/openevolve_output/`:
-- `best/best_program.py` - Best evolved multi-agent system
-- `best/best_program_info.json` - Metrics and metadata
-- `checkpoints/checkpoint_N/` - Periodic snapshots
-- `logs/` - Detailed evolution logs
-
-## Expected Results
-
-The evolution should improve:
-- Mathematical reasoning in agent prompts
-- Verification criteria and feedback quality
-- Error correction strategies
-- Answer extraction accuracy
-
-Initial baseline: ~30-40% accuracy on Math500
-Expected after evolution with GPT-5: ~60-80% accuracy
-
-## Advanced Usage
 
 ### Adjust Problem Difficulty
 ```bash
@@ -201,13 +149,3 @@ pip install datasets
 - Reduce `MATH_EVAL_PROBLEMS` environment variable
 - Enable cascade evaluation to fail fast on bad programs
 
-## Summary
-
-You now have a complete multi-agent system optimization setup:
-
-✅ **initial_program.py** - 4-agent system with evolvable prompts and protocols
-✅ **evaluator.py** - Cascade evaluation using Math500 dataset with `get_success()`
-✅ **config.yaml** - GPT-5 (80%) + GPT-5-mini (20%) for evolution
-✅ **eval_utils.py** - Math evaluation utilities (already present)
-
-Run `python openevolve-run.py examples/math_mas/initial_program.py examples/math_mas/evaluator.py --config examples/math_mas/config.yaml --iterations 50` to start evolution!

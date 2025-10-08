@@ -274,7 +274,7 @@ def initialize_logging(base_dir: str = "logs"):
     return _log_dir
 
 
-def save_iteration_log(results: List[Dict], iteration: int):
+def save_iteration_log(results: List[Dict], iteration: Optional[int] = None):
     """Save conversation logs for an iteration."""
     global _log_dir, _iteration_counter
 
@@ -355,8 +355,14 @@ def run_evaluation_sample(problems: List[Dict[str, str]], sample_size: int = 5) 
                 'error': str(e)
             })
 
-    # Save logs for this evaluation (get iteration from environment or use None)
-    iteration = int(os.environ.get('OPENEVOLVE_ITERATION', '0'))
+    # Save logs for this evaluation
+    try:
+        iteration = int(os.environ.get('OPENEVOLVE_ITERATION', '-1'))
+        if iteration < 0:
+            iteration = None
+    except (ValueError, TypeError):
+        iteration = None
+
     save_iteration_log(results, iteration)
 
     return results
