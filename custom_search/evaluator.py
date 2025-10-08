@@ -187,6 +187,7 @@ def evaluate(program_path: str) -> Dict[str, float]:
 
 def evaluate_stage1(program_path: str) -> Dict[str, float]:
     """Stage 1: Quick validation with 2 simple problems."""
+    logger.info("  └─ Stage 1: Quick validation (2 problems)...")
     try:
         # Load program
         spec = importlib.util.spec_from_file_location("program", program_path)
@@ -214,7 +215,8 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
         accuracy = 0.0 if has_errors else calculate_accuracy(results)
         combined_score = accuracy
 
-        print(f"\nStage 1: {'PASS' if not has_errors else 'FAIL'} | Accuracy: {accuracy:.2%}")
+        status = 'PASS' if not has_errors else 'FAIL'
+        logger.info(f"     Stage 1 {status}: Accuracy={accuracy:.2%}, Time={eval_time:.1f}s")
 
         return {
             "validation_passed": 1.0 if not has_errors else 0.0,
@@ -230,17 +232,23 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
 
 def evaluate_stage2(program_path: str) -> Dict[str, float]:
     """Stage 2: Medium evaluation with 5 problems."""
+    logger.info("  └─ Stage 2: Medium evaluation (5 problems)...")
     original = os.environ.get("MATH_EVAL_PROBLEMS", "10")
     os.environ["MATH_EVAL_PROBLEMS"] = "5"
     try:
-        return evaluate(program_path)
+        result = evaluate(program_path)
+        logger.info(f"     Stage 2 complete: Score={result.get('combined_score', 0):.4f}")
+        return result
     finally:
         os.environ["MATH_EVAL_PROBLEMS"] = original
 
 
 def evaluate_stage3(program_path: str) -> Dict[str, float]:
     """Stage 3: Full evaluation (same as main evaluate)."""
-    return evaluate(program_path)
+    logger.info("  └─ Stage 3: Full evaluation (10 problems)...")
+    result = evaluate(program_path)
+    logger.info(f"     Stage 3 complete: Score={result.get('combined_score', 0):.4f}")
+    return result
 
 
 if __name__ == "__main__":

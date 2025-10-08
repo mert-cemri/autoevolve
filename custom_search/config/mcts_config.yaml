@@ -1,0 +1,20 @@
+# MCTS Search Configuration
+
+# Search parameters
+iterations: 50          # Number of MCTS iterations
+expansion_width: 3      # Number of children per expansion
+exploration_constant: 1.414  # UCT exploration parameter (√2)
+
+# Evaluation parameters
+num_eval_problems: 10   # Number of problems to evaluate on (randomly sampled with seed=42)
+
+# LLM configuration
+model: "gpt-5"            # Model for search/evolution (mutating programs)
+agent_model: "gpt-5-mini" # Model for multi-agent system (solving problems)
+temperature: 0.8          # Note: GPT-5 only supports temperature=1 (ignored for gpt-5)
+max_tokens: 16000         # Passed as max_completion_tokens to API
+
+# Paths
+initial_program: "initial_program.py"
+evaluator: "evaluator.py"
+# output_dir is auto-generated: custom_search/results/mcts/run_{timestamp}

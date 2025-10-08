@@ -265,8 +265,8 @@ def initialize_logging(base_dir: str = "logs"):
     logs_path = Path(base_dir)
     logs_path.mkdir(exist_ok=True)
 
-    # Get approach name from environment variable (set by search strategy or OpenEvolve)
-    approach = os.environ.get("SEARCH_STRATEGY", "openevolve")
+    # Get approach name from environment variable (set by search strategy)
+    approach = os.environ.get("SEARCH_STRATEGY", "unknown")
 
     # Create approach-specific directory
     approach_path = logs_path / approach

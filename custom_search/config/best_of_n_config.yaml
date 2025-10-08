@@ -1,0 +1,19 @@
+# Best of N Search Configuration
+
+# Search parameters
+n: 4                    # Number of parallel lineages
+iterations: 10          # Number of iterations per lineage
+
+# Evaluation parameters
+num_eval_problems: 10   # Number of problems to evaluate on (randomly sampled with seed=42)
+
+# LLM configuration
+model: "gpt-5"            # Model for search/evolution (mutating programs)
+agent_model: "gpt-5-mini" # Model for multi-agent system (solving problems)
+temperature: 0.8          # Note: GPT-5 only supports temperature=1 (ignored for gpt-5)
+max_tokens: 16000         # Passed as max_completion_tokens to API
+
+# Paths
+initial_program: "initial_program.py"
+evaluator: "evaluator.py"
+# output_dir is auto-generated: custom_search/results/best_of_n/run_{timestamp}
