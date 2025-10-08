@@ -1,0 +1,116 @@
+# Configuration for Multi-Agent Math Solving System Evolution
+# This config evolves a multi-agent system to solve mathematical problems
+
+# Evolution settings
+max_iterations: 50
+checkpoint_interval: 5
+log_level: "INFO"
+random_seed: 42  # For reproducibility
+
+# LLM configuration for OpenEvolve's evolution process
+llm:
+  # Models for evolution (generating mutations via OpenAI API)
+  primary_model: "gpt-5"
+  primary_model_weight: 0.8
+  secondary_model: "gpt-5-mini"
+  secondary_model_weight: 0.2
+
+  # API configuration
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 16000
+  timeout: 300
+
+# Prompt configuration for evolution
+prompt:
+  system_message: |
+    You are an expert in multi-agent system design and mathematical problem solving.
+    Your task is to evolve a multi-agent system that collaboratively solves mathematical problems.
+
+    The system has up to 4 agents with configurable:
+    - System prompts (defining agent roles and expertise)
+    - Communication protocols (how agents interact)
+    - Workflow structure (agent sequence and decision logic)
+
+    Key aspects to optimize:
+
+    1. AGENT PROMPTS: Design effective system prompts for each agent role:
+       - Solver: Initial problem solving approach and reasoning style
+       - Verifier: Verification criteria and feedback structure
+       - Reviser: Revision strategies and error correction methods
+       - Refiner: Final answer polishing and simplification techniques
+
+    2. COMMUNICATION PROTOCOLS: Optimize how agents interact:
+       - MAX_REVISION_ROUNDS: Balance thoroughness vs. efficiency (1-3 rounds)
+       - USE_REFINER: When to apply final refinement (True/False)
+       - REFINER_THRESHOLD: Confidence level for refinement (0.0-1.0)
+       - Decision logic for when to approve vs. revise
+
+    3. WORKFLOW STRUCTURE: Improve the agent coordination:
+       - Verification criteria and decision extraction
+       - Feedback formatting and specificity
+       - Error handling and fallback strategies
+       - Answer extraction and formatting
+
+    Mathematical problem-solving best practices:
+    - Step-by-step reasoning with clear justification
+    - Verification of intermediate steps
+    - Multiple solution approaches when helpful
+    - Simplification of final answers
+    - Proper mathematical notation (especially \boxed{} for final answers)
+
+    The system is evaluated on accuracy (Math500 dataset), completion rate, and efficiency.
+    Focus on improving correctness while maintaining reasonable computation time.
+
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Database configuration (MAP-Elites with island model)
+database:
+  population_size: 100
+  archive_size: 40
+  num_islands: 4
+
+  # Feature dimensions for MAP-Elites grid
+  # These create a diversity-quality tradeoff space
+  feature_dimensions:
+    - "accuracy"        # Correctness on test problems
+    - "completion_rate" # Percentage of problems attempted
+
+  # Feature bins for grid granularity
+  feature_bins:
+    accuracy: 10
+    completion_rate: 5
+
+  # Selection strategy
+  elite_selection_ratio: 0.2
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.5
+
+  # Island migration settings
+  migration_interval: 10
+  migration_rate: 0.1
+
+# Evaluator configuration
+evaluator:
+  timeout: 600  # 10 minutes max per evaluation
+  cascade_evaluation: true
+  cascade_thresholds: [0.3, 0.6]  # Stage 1: 0.3, Stage 2: 0.6
+  parallel_evaluations: 4
+  use_llm_feedback: false  # Disable LLM feedback for speed
+  max_retries: 2
+
+# Evolution settings
+diff_based_evolution: false  # Use full rewrites for multi-agent systems
+allow_full_rewrites: true
+max_code_length: 50000
+
+# Early stopping configuration
+early_stopping_patience: 20
+early_stopping_metric: "combined_score"
+convergence_threshold: 0.01
+
+# Feature dimension settings
+# Note: These are used for MAP-Elites binning
+# Metrics not in this list are used for fitness calculation
