@@ -53,3 +53,9 @@ htmlcov/
 # For SR
 secrets.yaml
 problems
+
+# Local secrets
+.env
+# Local debug logs
+prompt_builder_logs.jsonl
+try.txt

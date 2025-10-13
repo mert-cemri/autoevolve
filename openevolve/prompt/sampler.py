@@ -4,6 +4,8 @@ Prompt sampling for OpenEvolve
 
 import logging
 import random
+import json
+import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openevolve.config import PromptConfig
@@ -84,7 +86,32 @@ class PromptSampler:
         Returns:
             Dictionary with 'system' and 'user' keys
         """
+        # Lightweight structured logging of inputs for debugging/inspection
+        summary = {
+            "evolution_round": evolution_round,
+            "language": language,
+            "diff_based_evolution": diff_based_evolution,
+            "feature_dimensions": list(feature_dimensions or []),
+            "program_metrics_keys": list(program_metrics.keys()) if isinstance(program_metrics, dict) else [],
+            "previous_programs_count": len(previous_programs or []),
+            "top_programs_count": len(top_programs or []),
+            "inspirations_count": len(inspirations or []),
+            "artifacts_keys": list((program_artifacts or {}).keys()) if isinstance(program_artifacts, dict) else [],
+            "current_program_chars": len(current_program or ""),
+            "parent_program_chars": len(parent_program or ""),
+            "previous_ids": [p.get("id") for p in (previous_programs or []) if isinstance(p, dict) and p.get("id")],
+            "top_ids": [p.get("id") for p in (top_programs or []) if isinstance(p, dict) and p.get("id")],
+            "inspiration_ids": [p.get("id") for p in (inspirations or []) if isinstance(p, dict) and p.get("id")],
+        }
+        # Hardcoded JSONL append for prompt input summaries
+        try:
+            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(json.dumps({"type": "inputs", **summary}, ensure_ascii=False) + "\n")
+        except Exception:
+            logger.debug("PromptSampler.build_prompt: failed to append inputs to prompt_builder_logs.txt", exc_info=True)
         # Select template based on evolution mode (with overrides)
+        # import pdb; pdb.set_trace()
         if template_key:
             # Use explicitly provided template key
             user_template_key = template_key
@@ -134,6 +161,27 @@ class PromptSampler:
         fitness_score = get_fitness_score(program_metrics, feature_dimensions)
         feature_coords = format_feature_coordinates(program_metrics, feature_dimensions)
 
+        # Log intermediate computed context (details)
+        try:
+            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
+            details = {
+                "type": "details",
+                "evolution_round": evolution_round,
+                "template_key": user_template_key,
+                "fitness_score": fitness_score,
+                "feature_coords": feature_coords,
+                "metrics_preview": metrics_str.split("\n")[:8],
+                "improvement_areas_preview": (improvement_areas.split("\n") if isinstance(improvement_areas, str) else []),
+                "previous_programs_count": len(previous_programs or []),
+                "top_programs_count": len(top_programs or []),
+                "inspirations_count": len(inspirations or []),
+                "artifacts_present": bool(program_artifacts),
+            }
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(json.dumps(details, ensure_ascii=False) + "\n")
+        except Exception:
+            logger.debug("PromptSampler.build_prompt: failed to append details to prompt_builder_logs.txt", exc_info=True)
+
         # Format the final user message
         user_message = user_template.format(
             metrics=metrics_str,
@@ -147,6 +195,27 @@ class PromptSampler:
             artifacts=artifacts_section,
             **kwargs,
         )
+
+        # Hardcoded JSONL append for final prompt text
+        try:
+            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
+            with open(_log_path, "a", encoding="utf-8") as _f:
+                _f.write(
+                    json.dumps(
+                        {
+                            "type": "prompt",
+                            "evolution_round": evolution_round,
+                            "language": language,
+                            "diff_based_evolution": diff_based_evolution,
+                            "system": system_message,
+                            "user": user_message,
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+        except Exception:
+            logger.debug("PromptSampler.build_prompt: failed to append prompt to prompt_builder_logs.txt", exc_info=True)
 
         return {
             "system": system_message,
