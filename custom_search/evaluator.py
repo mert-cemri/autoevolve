@@ -39,8 +39,11 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
     Load math problems from HuggingFaceH4/MATH-500 dataset.
 
     Args:
-        num_samples: Number of problems to sample
+        num_samples: Number of problems to sample (default: 50)
         seed: Random seed for reproducibility (default: 42)
+              - All strategies use the same seed for fair comparison
+              - All iterations see the same problems (good for reproducibility)
+              - Set num_samples=-1 to use all 500 problems
 
     Returns:
         List of problem dictionaries with question, final_answer, and answer
@@ -50,7 +53,17 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
 
         dataset = load_dataset("HuggingFaceH4/MATH-500", split="test")
 
+        # Use all problems if num_samples is -1
+        if num_samples < 0:
+            logger.info(f"Using all {len(dataset)} problems from Math500 dataset")
+            return [{
+                'question': item.get('problem', item.get('question', '')),
+                'final_answer': item.get('answer', item.get('solution', '')),
+                'answer': item.get('answer', item.get('solution', ''))
+            } for item in dataset]
+
         # Randomly sample problems with fixed seed for reproducibility
+        logger.info(f"Randomly sampling {num_samples} problems from Math500 dataset (seed={seed})")
         random.seed(seed)
         sampled = random.sample(list(dataset), min(num_samples, len(dataset)))
 

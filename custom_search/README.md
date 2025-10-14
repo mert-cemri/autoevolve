@@ -271,10 +271,10 @@ max_tokens: 16000
 - All runs with the same `num_eval_problems` will evaluate on the exact same problems
 - This ensures fair comparison across different search strategies
 
-**Important GPT-5 API Notes**:
-- GPT-5 uses `max_completion_tokens` instead of the older `max_tokens` parameter
-- GPT-5 only supports `temperature=1` (default). Custom temperature values are automatically ignored for GPT-5
-- The code automatically handles these API differences - no changes needed to the config files
+**API Compatibility**:
+- The code automatically handles different API parameters for different models
+- GPT-5, GPT-5-mini, GPT-4, etc. all work seamlessly
+- No manual configuration needed - just specify the model name
 
 ## Output
 

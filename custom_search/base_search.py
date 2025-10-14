@@ -163,19 +163,29 @@ Generate an IMPROVED version of this program that will achieve better accuracy a
 Focus your changes on the code between # EVOLVE-BLOCK-START and # EVOLVE-BLOCK-END markers.
 Return the complete improved Python code."""
 
-        # Build API parameters
+        # Build API parameters - handle GPT-5 API restrictions
         api_params = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ],
-            "max_completion_tokens": self.max_tokens
+            ]
         }
 
-        # GPT-5 only supports temperature=1 (default), so don't pass it
-        if not self.model.startswith("gpt-5"):
+        # GPT-5 uses max_completion_tokens, others might use max_tokens
+        # GPT-5 only supports temperature=1 (don't pass parameter)
+        # GPT-5-mini uses both max_completion_tokens and temperature
+        model_lower = self.model.lower()
+
+        if "gpt-5" in model_lower and "mini" not in model_lower:
+            # GPT-5 (not mini): max_completion_tokens only, no temperature
+            api_params["max_completion_tokens"] = self.max_tokens
+            logger.debug(f"  Using GPT-5 API: max_completion_tokens={self.max_tokens}, temperature=default")
+        else:
+            # GPT-5-mini, GPT-4, etc: both parameters supported
+            api_params["max_completion_tokens"] = self.max_tokens
             api_params["temperature"] = self.temperature
+            logger.debug(f"  Using {self.model} API: max_completion_tokens={self.max_tokens}, temperature={self.temperature}")
 
         response = self.client.chat.completions.create(**api_params)
 

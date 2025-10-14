@@ -10,8 +10,8 @@ num_eval_problems: 10   # Number of problems to evaluate on (randomly sampled wi
 # LLM configuration
 model: "gpt-5"            # Model for search/evolution (mutating programs)
 agent_model: "gpt-5-mini" # Model for multi-agent system (solving problems)
-temperature: 0.8          # Note: GPT-5 only supports temperature=1 (ignored for gpt-5)
-max_tokens: 16000         # Passed as max_completion_tokens to API
+temperature: 0.8          # For models that support it (auto-handled)
+max_tokens: 16000         # Auto-converted to max_completion_tokens
 
 # Paths
 initial_program: "initial_program.py"
