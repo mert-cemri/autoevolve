@@ -1,55 +1,59 @@
-### Memory Module (pluggable)
+### Memory (clean, pluggable, live UI)
 
 Purpose
-- Provide a simple, pluggable memory store that any evolution loop can use to add, update, and retrieve contextual information (programs, artifacts, insights, prompts, errors, run metadata) at runtime.
-- Usable by both OpenEvolve and custom_search.
+- Minimal memory for generator–validator evolution/search. Store raw step data and auto-enriched insights to guide future steps.
 
-Key Ideas
-- Namespace: separate logical domains (e.g., "openevolve", "custom_search", "general").
-- Kind: record type (e.g., "program", "artifact", "insight", "run", "prompt", "error").
-- Tags: quick filtering (e.g., "island:0", "iteration:5", "beam:2", "lineage:1").
-- Payload: arbitrary JSON-serializable dict.
-- Optional fields: `run_id`, `key` (stable id for upsert/dedup), `relations` (graph links like derived_from).
+Schema (schemas.py)
+- MemoryEntry (user-provided fields)
+  - parent_program_id, child_program_id
+  - generator_input (free-form; e.g., {"code": "..."})
+  - generator_output (free-form; e.g., {"code": "..."})
+  - validator_output (metrics/errors)
+  - diff_summary_user (optional short note)
+  - generator_prompt (optional dict)
+  - iteration (optional)
+  - sampling, metadata (optional dicts)
+- Auto-enriched (in_memory.py, async): synopsis_ai (dict)
+  - overview
+  - delta_summary_structured
+  - validator_summary_structured
+  - tags
+  - causal_links [{change,effect,confidence}]
+  - selectors [{key,op:'==',value}]
+  - pitfalls
 
-Components
-- `schemas.py` → `MemoryRecord`: data model for memory entries.
-- `base.py` → `MemoryStore`: abstract interface (CRUD + search).
-- `in_memory.py` → `InMemoryMemoryStore`: default in-process implementation with basic indexes.
+Store (in_memory.py)
+- Non-blocking add(record):
+  - Insert + index (parent/child/iteration + pre-tags)
+  - Write live snapshot (JSON) for UI
+  - Spawn background GPT summarizer; when done → set synopsis_ai, index tags/selectors/failures/buckets, write snapshot again
+- Indexes supported in search(filter_eq):
+  - parent, child, iteration, tag
+  - sel:<key> (from synopsis selectors)
+  - failure_signature, score_bucket, accuracy_bucket (also derived from validator_output if present)
 
-Usage
-```python
-from autoevolve.memory import InMemoryMemoryStore, MemoryRecord
+API (base.py)
+- add(entry) → id, get(id) → entry, delete(id) → bool
+- search(filter_eq: dict, limit, offset) → List[entry]
+- list_search_keys() → ["parent","child","iteration","tag","failure_signature","score_bucket","accuracy_bucket"]
 
-mem = InMemoryMemoryStore()
+Live UI (ui_app.py)
+- Snapshot-driven; no backend coupling
+- Sidebar filters: parent, child, iteration, tag, selector key/value, failure_signature, score/accuracy buckets
+- Nodes table; detail panel shows structured synopsis + raw payload tabs
 
-# Add a record
-rec = MemoryRecord(
-    namespace="openevolve",
-    kind="insight",
-    payload={"message": "Fitness plateau at iteration 20", "best": 1.4992},
-    tags=["iteration:20", "island:0"],
-    run_id="run_2025_10_13",
-    key="openevolve:island:0:iter:20:insight",
-)
-rec_id = mem.add(rec)
+Run demo + UI
+```bash
+# UI
+python -m streamlit run autoevolve/memory/ui_app.py
 
-# Update tags/payload
-mem.update(rec_id, updates={"best": 1.4994}, tags=["note:watch-migration"]) 
-
-# Search by namespace/tags/text
-hits = mem.search(namespace="openevolve", tags_any=["island:0"], text_query="plateau")
+# Demo (in another terminal)
+export MEMORY_SNAPSHOT_PATH=/tmp/memory_snapshot.json
+export OPENAI_API_KEY=...    # optional for GPT synopsis
+python autoevolve/memory/demo_step_memory.py
 ```
 
-Direct Integration Patterns (no adapters)
-- OpenEvolve (at merge time):
-  - Write `program` record with metrics, island, iteration, parent/child ids, changes summary; tag with `island:{i}`, `iteration:{t}`, and set `run_id`.
-  - Write `artifact` summary records (e.g., stderr summaries) for the parent/child; tag with `artifact:*` labels.
-  - During prompt build, query recent `insight` and `artifact` records for the island (and run) to assemble a compact “Memory context” section.
-- custom_search (in strategy loop):
-  - Write `program` records per candidate with score/metrics and tags like `strategy:beam_search`, `beam:{k}` or `lineage:{i}`, `iteration:{t}`.
-  - Retrieve last K insights (or best-per-lineage summaries) to feed into the mutation `prompt_context`.
-
 Notes
-- In-memory store is single-process; for multi-process use a process-safe backend (e.g., add a SQLite implementation) or run a single writer with IPC.
-- Text search is naive substring over serialized payload; you can later add a vector or regex-capable backend behind the same interface.
-- The schema is intentionally minimal + extensible via `payload`, `tags`, `run_id`, `key`, and `relations` so you won’t need breaking changes as needs grow.
+- GPT calls are async (non-blocking). Client timeout is set; you can set OPENAI_SUMMARY_MODEL (default gpt-4.1).
+- Thread-safe updates via a lock; atomic snapshot writes.
+- Pre-tags expose simple parent features immediately; richer tags/selectors appear after synopsis.

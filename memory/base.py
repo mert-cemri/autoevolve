@@ -1,32 +1,20 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-from .schemas import MemoryRecord
+from .schemas import MemoryEntry
 
 
 class MemoryStore(ABC):
-    """Abstract interface for a pluggable memory store.
-
-    Design goals:
-    - Pluggable across OpenEvolve and custom_search
-    - Simple CRUD and flexible search
-    - Namespaces and tags for fast filtering
-    - Optional lightweight indexing hooks (override on implementations)
-    """
+    """Minimal memory store: insert, get, delete, search by filters."""
 
     @abstractmethod
-    def add(self, record: MemoryRecord) -> str:
+    def add(self, record: MemoryEntry) -> str:
         """Add a record and return its id."""
         raise NotImplementedError
 
     @abstractmethod
-    def get(self, record_id: str) -> Optional[MemoryRecord]:
+    def get(self, record_id: str) -> Optional[MemoryEntry]:
         """Fetch a record by id."""
-        raise NotImplementedError
-
-    @abstractmethod
-    def update(self, record_id: str, updates: Dict[str, Any] = None, tags: List[str] = None) -> bool:
-        """Update payload and/or tags; return True if updated."""
         raise NotImplementedError
 
     @abstractmethod
@@ -37,22 +25,19 @@ class MemoryStore(ABC):
     @abstractmethod
     def search(
         self,
-        namespace: Optional[str] = None,
-        kinds: Optional[List[str]] = None,
-        tags_any: Optional[List[str]] = None,
-        tags_all: Optional[List[str]] = None,
-        text_query: Optional[str] = None,
+        filter_eq: Optional[Dict[str, Any]] = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> List[MemoryRecord]:
-        """Search records by namespace/kinds/tags and optional text query over payload.
-        Implementations may override scoring/ordering (default: recency).
-        """
+    ) -> List[MemoryEntry]:
+        """Search by exact-match on selected payload fields (store-defined)."""
         raise NotImplementedError
 
-    # Optional bulk ops
-    def add_many(self, records: Iterable[MemoryRecord]) -> List[str]:
-        return [self.add(r) for r in records]
+    @abstractmethod
+    def list_search_keys(self) -> List[str]:
+        """Return the supported exact-match filter keys."""
+        raise NotImplementedError
 
-    def get_many(self, record_ids: Iterable[str]) -> List[MemoryRecord]:
-        return [r for rid in record_ids if (r := self.get(rid)) is not None]
+    # Bulk helpers
+    def upsert(self, record: MemoryEntry) -> str:
+        """Not supported in minimal API; use add()."""
+        return self.add(record)
