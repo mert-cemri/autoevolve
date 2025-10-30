@@ -19,7 +19,7 @@ from typing import Any, Dict, List
 import numpy as np
 
 # Import the evaluation utilities
-from eval_utils import get_success, extract_answer, strip_string, math_equal
+from eval_utils import get_success_olympiad, extract_answer, strip_string, math_equal
 
 logger = logging.getLogger(__name__)
 
@@ -36,41 +36,45 @@ MAX_PENALTY_CALLS = 10.0     # Full penalty beyond this
 
 def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, str]]:
     """
-    Load math problems from HuggingFaceH4/MATH-500 dataset.
+    Load math problems from OlympiadBench dataset.
 
     Args:
         num_samples: Number of problems to sample (default: 50)
         seed: Random seed for reproducibility (default: 42)
               - All strategies use the same seed for fair comparison
               - All iterations see the same problems (good for reproducibility)
-              - Set num_samples=-1 to use all 500 problems
+              - Set num_samples=-1 to use all 675 problems
 
     Returns:
         List of problem dictionaries with question, final_answer, and answer
     """
     try:
-        from datasets import load_dataset
+        olympiad_path = '/Users/mertcemri/Desktop/research/autoevolve/olympiadbench/test.jsonl'
 
-        dataset = load_dataset("HuggingFaceH4/MATH-500", split="test")
+        # Load all problems from JSONL
+        problems = []
+        with open(olympiad_path, 'r') as f:
+            for line in f:
+                problems.append(json.loads(line))
 
         # Use all problems if num_samples is -1
         if num_samples < 0:
-            logger.info(f"Using all {len(dataset)} problems from Math500 dataset")
+            logger.info(f"Using all {len(problems)} problems from OlympiadBench dataset")
             return [{
-                'question': item.get('problem', item.get('question', '')),
-                'final_answer': item.get('answer', item.get('solution', '')),
-                'answer': item.get('answer', item.get('solution', ''))
-            } for item in dataset]
+                'question': item['question'],
+                'final_answer': item['final_answer'],
+                'answer': item['final_answer']
+            } for item in problems]
 
         # Randomly sample problems with fixed seed for reproducibility
-        logger.info(f"Randomly sampling {num_samples} problems from Math500 dataset (seed={seed})")
+        logger.info(f"Randomly sampling {num_samples} problems from OlympiadBench dataset (seed={seed})")
         random.seed(seed)
-        sampled = random.sample(list(dataset), min(num_samples, len(dataset)))
+        sampled = random.sample(problems, min(num_samples, len(problems)))
 
         return [{
-            'question': item.get('problem', item.get('question', '')),
-            'final_answer': item.get('answer', item.get('solution', '')),
-            'answer': item.get('answer', item.get('solution', ''))
+            'question': item['question'],
+            'final_answer': item['final_answer'],
+            'answer': item['final_answer']
         } for item in sampled]
 
     except Exception as e:
@@ -97,25 +101,28 @@ def run_with_timeout(program_module, problems: List[Dict], timeout_seconds: int 
 
 
 def calculate_accuracy(results: List[Dict]) -> float:
-    """Calculate accuracy using get_success from eval_utils."""
+    """Calculate accuracy using get_success_olympiad from eval_utils."""
     if not results:
         return 0.0
 
+    # Format samples for get_success_olympiad
+    # It expects: pred (as list), answer (ground truth), completions (list)
     formatted_samples = [{
-        'pred': r.get('pred', r.get('answer', '')),
-        'solution': r.get('gold_answer', ''),
-        'answer': r.get('gold_answer', '')
+        'pred': [r.get('pred', r.get('answer', ''))],  # Wrap in list
+        'answer': r.get('gold_answer', ''),
+        'completions': [r.get('pred', r.get('answer', ''))]  # For 'no solution' check
     } for r in results]
 
     try:
-        return float(get_success(formatted_samples, tqdm_bar=False))
+        accuracy, failed_comparisons = get_success_olympiad(formatted_samples, tqdm_bar=False)
+        return float(accuracy)
     except Exception as e:
-        print(f"get_success failed ({e}), using fallback")
+        print(f"get_success_olympiad failed ({e}), using fallback")
         correct = sum(
             1 for s in formatted_samples
             if math_equal(
-                strip_string(extract_answer(s['pred']), skip_unit=False),
-                strip_string(extract_answer(s['solution']), skip_unit=False)
+                strip_string(extract_answer(s['pred'][0]), skip_unit=False),
+                strip_string(extract_answer(s['answer']), skip_unit=False)
             )
         )
         return correct / len(formatted_samples)

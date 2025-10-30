@@ -1,3 +1,27 @@
+python openevolve-run.py examples/math_mas/initial_program.py \
+  examples/math_mas/evaluator.py \
+  --config examples/math_mas/config.yaml \
+  --iterations 50
+
+# Best-of-N
+python openevolve-run.py examples/math_mas/initial_program.py \
+  examples/math_mas/evaluator.py \
+  --best-of-n \
+  --iterations 50
+
+# Beam Search
+python openevolve-run.py examples/math_mas/initial_program.py \
+  examples/math_mas/evaluator.py \
+  --beam-search \
+  --iterations 50
+
+# MCTS
+python openevolve-run.py examples/math_mas/initial_program.py \
+  examples/math_mas/evaluator.py \
+  --mcts \
+  --iterations 50
+
+
 # Search Strategies in OpenEvolve
 
 OpenEvolve now supports multiple search strategies that all share the same infrastructure (prompt building, parallel execution, LLM ensembles) but use different parent selection and program organization approaches.
