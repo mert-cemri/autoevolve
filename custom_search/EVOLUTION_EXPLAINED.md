@@ -149,22 +149,58 @@ Each generated program is evaluated by:
    spec.loader.exec_module(program)
    ```
 
-3. **Run on problems**:
+3. **Load problems**:
    ```python
-   for problem in math_problems:
+   # Math500 dataset has 500 problems
+   # We randomly sample N problems with seed=42
+   random.seed(42)
+   problems = random.sample(all_problems, num_eval_problems)
+
+   # Example with num_eval_problems=10:
+   # Problems [42, 157, 89, 301, ...] (always the same 10 with seed=42)
+   ```
+
+4. **Run on problems**:
+   ```python
+   for problem in problems:  # Same 10 problems every iteration
        result = program.run_evaluation_sample(problem)
        # Uses agent_model (GPT-5-mini) internally
    ```
 
-4. **Compute metrics**:
+5. **Compute metrics**:
    - Accuracy: % correct answers
    - Efficiency: Based on avg LLM calls (target: 3, penalty: 10+)
    - Speed: Time per problem
 
-5. **Combined score**:
+6. **Combined score**:
    ```python
    score = 0.70 * accuracy + 0.25 * efficiency_score + 0.05 * time_score
    ```
+
+### Problem Sampling Strategy
+
+```
+Math500 Dataset (500 problems)
+         ↓ random.seed(42)
+         ↓ random.sample(problems, 10)
+         ↓
+[Problem 42, 157, 89, 301, 8, 445, 223, 91, 367, 129]
+         ↓
+Same 10 problems used in:
+  - Every iteration (0, 1, 2, ..., 10)
+  - Every strategy (Best-of-N, Beam, MCTS)
+  - Every run (if same seed & num_eval_problems)
+         ↓
+Benefits:
+  ✅ Fair comparison across strategies
+  ✅ Reproducible results
+  ✅ Fast evaluation (10 problems)
+
+Considerations:
+  ⚠️  Risk of overfitting to these 10 problems
+  ⚠️  Limited coverage (2% of dataset)
+  ✅ Can increase to 50, 100, or all 500 problems
+```
 
 ## Why Two Models?
 

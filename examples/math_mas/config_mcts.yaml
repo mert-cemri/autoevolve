@@ -1,0 +1,70 @@
+# Configuration for MCTS Strategy
+
+# Search strategy
+search_strategy: "mcts"
+expansion_width: 3             # Children per expansion
+exploration_constant: 1.414    # UCT exploration (√2)
+
+# Evolution settings
+max_iterations: 50
+checkpoint_interval: 5
+log_level: "INFO"
+random_seed: 42
+
+# LLM configuration for evolution
+llm:
+  primary_model: "gpt-5"
+  primary_model_weight: 0.8
+  secondary_model: "gpt-5-mini"
+  secondary_model_weight: 0.2
+
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 16000
+  timeout: 300
+
+# Prompt configuration
+prompt:
+  system_message: |
+    You are an expert in multi-agent system design and mathematical problem solving.
+    Your task is to evolve a multi-agent system that collaboratively solves mathematical problems.
+
+    The system has up to 4 agents with configurable:
+    - System prompts (defining agent roles and expertise)
+    - Communication protocols (how agents interact)
+    - Workflow structure (agent sequence and decision logic)
+
+    Key aspects to optimize:
+    1. AGENT PROMPTS: Design effective system prompts for each agent role
+    2. COMMUNICATION PROTOCOLS: Optimize how agents interact
+    3. WORKFLOW STRUCTURE: Improve the agent coordination
+
+    Focus on improving correctness while maintaining reasonable computation time.
+
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Database configuration (simplified for MCTS)
+database:
+  population_size: 100
+  feature_dimensions: []  # No MAP-Elites features needed
+
+# Evaluator configuration
+evaluator:
+  timeout: 600
+  cascade_evaluation: true
+  cascade_thresholds: [0.3, 0.6]
+  parallel_evaluations: 4
+  use_llm_feedback: false
+  max_retries: 2
+
+# Evolution settings
+diff_based_evolution: false
+allow_full_rewrites: true
+max_code_length: 50000
+
+# Early stopping
+early_stopping_patience: 20
+early_stopping_metric: "combined_score"
+convergence_threshold: 0.01

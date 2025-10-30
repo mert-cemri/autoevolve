@@ -7,7 +7,8 @@ into N/M programs. Repeats for T iterations and returns best program.
 
 import logging
 import os
-from typing import List
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import List, Tuple
 
 from .base_search import BaseSearch, Program
 
@@ -21,11 +22,50 @@ class BeamSearch(BaseSearch):
     Algorithm:
     1. Start with initial program
     2. For T iterations:
-       a. Branch current beam (size M) into N total candidates
+       a. Branch current beam (size M) into N total candidates (in parallel)
        b. Evaluate all candidates
        c. Keep top M as new beam
     3. Return best program from final beam
     """
+
+    def _generate_candidate(self, parent: Program, parent_idx: int, branch_idx: int,
+                           branches_per_member: int, iteration: int, total_iterations: int,
+                           candidate_num: int, total_candidates: int) -> Tuple[Program, int]:
+        """
+        Generate and evaluate a single candidate.
+
+        Returns:
+            Tuple of (program, candidate_num)
+        """
+        try:
+            logger.info(
+                f"  [Candidate {candidate_num}/{total_candidates}] "
+                f"Parent {parent_idx+1}, branch {branch_idx+1}/{branches_per_member}, "
+                f"parent_score={parent.score:.4f}"
+            )
+
+            code = self.mutate_program(
+                parent,
+                prompt_context=(
+                    f"Iteration {iteration}/{total_iterations}. "
+                    f"Parent score: {parent.score:.4f}. "
+                    f"Branch {branch_idx+1}/{branches_per_member} from this parent."
+                )
+            )
+
+            program = Program(code, parent_id=parent.id, generation=iteration)
+            self.evaluate_program(program)
+
+            logger.info(
+                f"  [Candidate {candidate_num}/{total_candidates}] ✓ Complete: "
+                f"score={program.score:.4f}"
+            )
+
+            return program, candidate_num
+
+        except Exception as e:
+            logger.error(f"  [Candidate {candidate_num}/{total_candidates}] ✗ Failed: {e}")
+            return parent, candidate_num
 
     def search(
         self,
@@ -80,59 +120,78 @@ class BeamSearch(BaseSearch):
         # Iterate
         for t in range(1, iterations + 1):
             logger.info(f"\n{'='*60}")
-            logger.info(f"ITERATION {t}/{iterations}")
+            logger.info(f"ITERATION {t}/{iterations} (PARALLEL)")
             logger.info(f"{'='*60}")
             logger.info(f"Current beam size: {len(beam)}")
+            logger.info(f"Current beam scores: {[f'{p.score:.4f}' for p in beam]}")
+            logger.info(f"Global best: {global_best.score:.4f}")
 
             # Calculate how many branches per beam member
             branches_per_member = max(1, branch_factor // len(beam))
-            logger.info(f"Generating {branches_per_member} branches per beam member\n")
+            logger.info(f"Generating {branches_per_member} branches per beam member (total: {branch_factor})\n")
 
-            # Generate candidates
-            candidates: List[Program] = []
-
+            # Build list of tasks to execute in parallel
+            tasks = []
+            candidate_num = 1
             for i, parent in enumerate(beam):
                 for j in range(branches_per_member):
-                    candidate_num = len(candidates) + 1
+                    tasks.append((parent, i, j, branches_per_member, candidate_num))
+                    candidate_num += 1
+
+            # Generate all candidates in parallel
+            with ThreadPoolExecutor(max_workers=len(tasks)) as executor:
+                futures = [
+                    executor.submit(
+                        self._generate_candidate,
+                        parent, parent_idx, branch_idx, branches_per_member,
+                        t, iterations, cand_num, len(tasks)
+                    )
+                    for parent, parent_idx, branch_idx, branches_per_member, cand_num in tasks
+                ]
+
+                results = []
+                for future in as_completed(futures):
+                    program, cand_num = future.result()
+                    results.append((cand_num, program))
+
+            # Sort by candidate number to maintain order
+            results.sort(key=lambda x: x[0])
+            candidates = [prog for _, prog in results]
+
+            # Track all programs and history
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Iteration {t} - All candidates generated:")
+            for idx, program in enumerate(candidates):
+                all_programs.append(program)
+
+                # Track global best
+                if program.score > global_best.score:
                     logger.info(
-                        f"[Candidate {candidate_num}/{branch_factor}] "
-                        f"Beam member {i+1}/{len(beam)}, branch {j+1}/{branches_per_member}, "
-                        f"parent_score={parent.score:.4f}"
+                        f"  ★★★ NEW GLOBAL BEST: {global_best.score:.4f} → "
+                        f"{program.score:.4f} (candidate {idx+1}) ★★★"
                     )
+                    global_best = program
 
-                    code = self.mutate_program(
-                        parent,
-                        prompt_context=(
-                            f"Iteration {t}/{iterations}. "
-                            f"Parent score: {parent.score:.4f}. "
-                            f"Branch {j+1}/{branches_per_member} from this parent."
-                        )
-                    )
-
-                    program = Program(code, parent_id=parent.id, generation=t)
-                    self.evaluate_program(program)
-                    candidates.append(program)
-                    all_programs.append(program)
-
-                    # Track global best
-                    if program.score > global_best.score:
-                        logger.info(f"  ★ NEW GLOBAL BEST: {global_best.score:.4f} → {program.score:.4f}")
-                        global_best = program
-
-                    self.history.append({
-                        "iteration": t,
-                        "parent_id": parent.id,
-                        "program_id": program.id,
-                        "score": program.score,
-                        "metrics": program.metrics
-                    })
+                # Find parent from tasks
+                parent, _, _, _, _ = tasks[idx]
+                self.history.append({
+                    "iteration": t,
+                    "parent_id": parent.id,
+                    "program_id": program.id,
+                    "score": program.score,
+                    "metrics": program.metrics
+                })
 
             # Select top M candidates for new beam
             candidates.sort(key=lambda p: p.score, reverse=True)
             beam = candidates[:beam_width]
 
-            logger.info(f"New beam scores: {[f'{p.score:.4f}' for p in beam]}")
-            logger.info(f"Best in beam: {beam[0].score:.4f}")
+            logger.info(f"{'='*60}")
+            logger.info(f"New beam selected (top {beam_width}):")
+            for i, p in enumerate(beam):
+                logger.info(f"  Beam position {i+1}: score={p.score:.4f}")
+            logger.info(f"Global best: {global_best.score:.4f}")
+            logger.info(f"{'='*60}")
 
             # Save best program for this iteration
             self.save_program(global_best, f"iteration_{t:04d}_best.py")

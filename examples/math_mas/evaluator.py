@@ -39,8 +39,11 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
     Load math problems from HuggingFaceH4/MATH-500 dataset.
 
     Args:
-        num_samples: Number of problems to sample
+        num_samples: Number of problems to sample (default: 50)
         seed: Random seed for reproducibility (default: 42)
+              - All strategies use the same seed for fair comparison
+              - All iterations see the same problems (good for reproducibility)
+              - Set num_samples=-1 to use all 500 problems
 
     Returns:
         List of problem dictionaries with question, final_answer, and answer
@@ -50,7 +53,17 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
 
         dataset = load_dataset("HuggingFaceH4/MATH-500", split="test")
 
+        # Use all problems if num_samples is -1
+        if num_samples < 0:
+            logger.info(f"Using all {len(dataset)} problems from Math500 dataset")
+            return [{
+                'question': item.get('problem', item.get('question', '')),
+                'final_answer': item.get('answer', item.get('solution', '')),
+                'answer': item.get('answer', item.get('solution', ''))
+            } for item in dataset]
+
         # Randomly sample problems with fixed seed for reproducibility
+        logger.info(f"Randomly sampling {num_samples} problems from Math500 dataset (seed={seed})")
         random.seed(seed)
         sampled = random.sample(list(dataset), min(num_samples, len(dataset)))
 
@@ -114,20 +127,20 @@ def evaluate(program_path: str) -> Dict[str, float]:
         # Load program
         spec = importlib.util.spec_from_file_location("program", program_path)
         if not spec or not spec.loader:
-            return {"accuracy": 0.0, "combined_score": 0.0, "error": "Load failed"}
+            return {"accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": "Load failed"}
 
         program = importlib.util.module_from_spec(spec)
         sys.modules["program"] = program
         spec.loader.exec_module(program)
 
         if not hasattr(program, "run_evaluation_sample"):
-            return {"accuracy": 0.0, "combined_score": 0.0, "error": "Missing run_evaluation_sample"}
+            return {"accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": "Missing run_evaluation_sample"}
 
         # Load problems
         num_problems = int(os.environ.get("MATH_EVAL_PROBLEMS", "10"))
         problems = load_math_dataset(num_samples=num_problems, seed=42)
         if not problems:
-            return {"accuracy": 0.0, "combined_score": 0.0, "error": "No problems"}
+            return {"accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": "No problems"}
 
         # Run evaluation
         start_time = time.time()
@@ -178,11 +191,11 @@ def evaluate(program_path: str) -> Dict[str, float]:
         }
 
     except TimeoutError:
-        return {"accuracy": 0.0, "combined_score": 0.0, "error": "timeout"}
+        return {"accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": "timeout"}
     except Exception as e:
         print(f"Evaluation failed: {e}")
         traceback.print_exc()
-        return {"accuracy": 0.0, "combined_score": 0.0, "error": str(e)}
+        return {"accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": str(e)}
 
 
 def evaluate_stage1(program_path: str) -> Dict[str, float]:
@@ -212,6 +225,8 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
 
         has_errors = any('error' in r for r in results)
         accuracy = 0.0 if has_errors else calculate_accuracy(results)
+        total_calls = sum(r.get('llm_calls', 0) for r in results)
+        avg_calls = total_calls / len(results) if results else 0.0
         combined_score = accuracy
 
         print(f"\nStage 1: {'PASS' if not has_errors else 'FAIL'} | Accuracy: {accuracy:.2%}")
@@ -219,13 +234,14 @@ def evaluate_stage1(program_path: str) -> Dict[str, float]:
         return {
             "validation_passed": 1.0 if not has_errors else 0.0,
             "accuracy": float(accuracy),
+            "avg_llm_calls": float(avg_calls),
             "combined_score": float(combined_score),
             "stage1_time": float(eval_time)
         }
 
     except Exception as e:
         print(f"Stage 1 failed: {e}")
-        return {"validation_passed": 0.0, "combined_score": 0.0, "error": str(e)}
+        return {"validation_passed": 0.0, "accuracy": 0.0, "avg_llm_calls": 0.0, "combined_score": 0.0, "error": str(e)}
 
 
 def evaluate_stage2(program_path: str) -> Dict[str, float]:

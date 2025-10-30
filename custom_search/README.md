@@ -84,14 +84,15 @@ Use as parent for next iteration...
 Generates N independent evolutionary lineages and evolves each linearly.
 
 **Algorithm:**
-1. Create N variants from initial program
-2. Evolve each lineage independently for T iterations
+1. Create N variants from initial program (in parallel)
+2. Evolve each lineage independently for T iterations (all N lineages run in parallel at each iteration)
 3. Return the best program across all lineages
 
 **Pros:**
-- Simple and parallelizable
+- Simple and fully parallelized
 - Good diversity through independent lineages
 - No premature convergence
+- Fast execution with parallel evaluation
 
 **Cons:**
 - No information sharing between lineages
@@ -103,7 +104,7 @@ Maintains a beam of M best programs and branches N times per iteration.
 **Algorithm:**
 1. Start with initial program
 2. For T iterations:
-   - Branch each beam member to create N total candidates
+   - Branch each beam member to create N total candidates (all candidates generated in parallel)
    - Evaluate all candidates
    - Keep top M as new beam
 3. Return best program from final beam
@@ -112,6 +113,7 @@ Maintains a beam of M best programs and branches N times per iteration.
 - Balances exploration and exploitation
 - Maintains diversity in beam
 - Can recover from local optima
+- Fully parallelized candidate generation
 
 **Cons:**
 - Greedy selection may miss good programs
@@ -267,9 +269,23 @@ max_tokens: 16000
 - This separation allows you to use a powerful model for evolution and a cheaper model for problem-solving
 
 **Evaluation Settings**:
-- Problems are randomly sampled from HuggingFaceH4/MATH-500 dataset with `seed=42` for reproducibility
-- All runs with the same `num_eval_problems` will evaluate on the exact same problems
-- This ensures fair comparison across different search strategies
+- **Random Sampling**: Problems are randomly selected from HuggingFaceH4/MATH-500 dataset
+- **Fixed Seed (42)**: Same seed = same problems across all runs and strategies
+- **Reproducibility**: All iterations and all strategies evaluate on the exact same problems
+- **Fair Comparison**: Ensures results are comparable across Best-of-N, Beam, MCTS, and OpenEvolve
+
+**Problem Set Options**:
+```yaml
+num_eval_problems: 10   # Fast iteration (default)
+num_eval_problems: 50   # Better coverage
+num_eval_problems: 100  # More robust evaluation
+num_eval_problems: -1   # Use all 500 problems (slow but comprehensive)
+```
+
+**Tradeoffs**:
+- **Small set (10)**: Fast evaluation, quicker experiments, but risk of overfitting to specific problems
+- **Large set (100+)**: Slower evaluation, better generalization, more reliable metrics
+- **All problems (-1)**: Gold standard for final evaluation, but very slow (~1 hour per iteration)
 
 **API Compatibility**:
 - The code automatically handles different API parameters for different models

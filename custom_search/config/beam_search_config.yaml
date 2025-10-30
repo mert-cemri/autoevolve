@@ -6,11 +6,11 @@ branch_factor: 8        # Total number of branches per iteration (N)
 iterations: 10          # Number of iterations (T)
 
 # Evaluation parameters
-num_eval_problems: 10   # Number of problems to evaluate on (randomly sampled with seed=42)
+num_eval_problems: 100   # Number of problems to evaluate on (randomly sampled with seed=42)
 
 # LLM configuration
 model: "gpt-5"            # Model for search/evolution (mutating programs)
-agent_model: "gpt-5-mini" # Model for multi-agent system (solving problems)
+agent_model: "gpt-5-nano" # Model for multi-agent system (solving problems)
 temperature: 0.8          # For models that support it (auto-handled)
 max_tokens: 16000         # Auto-converted to max_completion_tokens
 

@@ -3,7 +3,7 @@
 
 # Evolution settings
 max_iterations: 50
-checkpoint_interval: 5
+checkpoint_interval: 1
 log_level: "INFO"
 random_seed: 42  # For reproducibility
 
