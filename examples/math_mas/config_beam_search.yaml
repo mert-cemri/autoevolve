@@ -59,6 +59,10 @@ evaluator:
   use_llm_feedback: false
   max_retries: 2
 
+  # Math problem evaluation settings
+  num_problems: 100  # Number of problems for full evaluation
+  agent_model: "gpt-5-nano"  # Model for multi-agent system agents
+
 # Evolution settings
 diff_based_evolution: false
 allow_full_rewrites: true

@@ -57,13 +57,22 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
             for line in f:
                 problems.append(json.loads(line))
 
+        # Helper to extract answer from list or string
+        def extract_final_answer(item):
+            """Extract answer, handling both list and string formats"""
+            final_ans = item['final_answer']
+            # OlympiadBench stores answers as lists, take first element
+            if isinstance(final_ans, list):
+                return final_ans[0] if final_ans else ''
+            return final_ans
+
         # Use all problems if num_samples is -1
         if num_samples < 0:
             logger.info(f"Using all {len(problems)} problems from OlympiadBench dataset")
             return [{
                 'question': item['question'],
-                'final_answer': item['final_answer'],
-                'answer': item['final_answer']
+                'final_answer': extract_final_answer(item),
+                'answer': extract_final_answer(item)
             } for item in problems]
 
         # Randomly sample problems with fixed seed for reproducibility
@@ -73,8 +82,8 @@ def load_math_dataset(num_samples: int = 50, seed: int = 42) -> List[Dict[str, s
 
         return [{
             'question': item['question'],
-            'final_answer': item['final_answer'],
-            'answer': item['final_answer']
+            'final_answer': extract_final_answer(item),
+            'answer': extract_final_answer(item)
         } for item in sampled]
 
     except Exception as e:

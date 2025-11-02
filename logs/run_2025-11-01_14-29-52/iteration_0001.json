@@ -1,0 +1,20 @@
+[
+  {
+    "solution": "Computed locally.\nExpression: 2 + 2\nValue: 4\nFinal: \\boxed{4}",
+    "answer": "4",
+    "pred": "4",
+    "llm_calls": 0,
+    "conversation": [],
+    "gold_answer": "4",
+    "problem": "What is $2 + 2$?"
+  },
+  {
+    "solution": "Computed locally.\nExpression: 5 * 3\nValue: 15\nFinal: \\boxed{15}",
+    "answer": "15",
+    "pred": "15",
+    "llm_calls": 0,
+    "conversation": [],
+    "gold_answer": "15",
+    "problem": "What is $5 \\times 3$?"
+  }
+]

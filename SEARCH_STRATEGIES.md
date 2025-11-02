@@ -278,7 +278,7 @@ All strategies share the following OpenEvolve components:
 To compare all strategies:
 
 ```bash
-# Run all strategies with same parameters
+# Run all strategies with same parameters (each saves to separate directory)
 for strategy in "" "--best-of-n" "--beam-search" "--mcts"; do
   python openevolve-run.py \
     examples/math_mas/initial_program.py \
@@ -287,8 +287,11 @@ for strategy in "" "--best-of-n" "--beam-search" "--mcts"; do
     --iterations 50
 done
 
-# Compare results
-# Each run saves to: openevolve_output/best/best_program_info.json
+# Compare results - each strategy has its own directory:
+# openevolve_output/best_of_n/best/best_program_info.json
+# openevolve_output/beam_search/best/best_program_info.json
+# openevolve_output/mcts/best/best_program_info.json
+# openevolve_output/best/best_program_info.json (default MAP-Elites)
 ```
 
 ## Configuration
@@ -372,23 +375,36 @@ database:
 
 ## Output
 
-All strategies produce the same output structure:
+Each strategy saves results to its own subdirectory to prevent overwriting:
 
 ```
 openevolve_output/
-├── best/
-│   ├── best_program.py          # Best program code
-│   └── best_program_info.json   # Metrics and metadata
-├── checkpoints/
-│   ├── checkpoint_5/
-│   │   ├── strategy.json        # Strategy state
-│   │   ├── best_program.py
-│   │   └── best_program_info.json
-│   └── checkpoint_10/
-│       └── ...
-└── logs/
-    └── openevolve_YYYYMMDD_HHMMSS.log
+├── best_of_n/                   # Best-of-N results
+│   ├── best/
+│   │   ├── best_program.py          # Best program code
+│   │   └── best_program_info.json   # Metrics and metadata
+│   ├── checkpoints/
+│   │   ├── checkpoint_5/
+│   │   │   ├── strategy.json        # Strategy state
+│   │   │   ├── best_program.py
+│   │   │   └── best_program_info.json
+│   │   └── checkpoint_10/
+│   │       └── ...
+│   └── logs/
+│       └── openevolve_YYYYMMDD_HHMMSS.log
+├── beam_search/                 # Beam Search results
+│   ├── best/
+│   ├── checkpoints/
+│   └── logs/
+├── mcts/                        # MCTS results
+│   ├── best/
+│   ├── checkpoints/
+│   └── logs/
+└── [default MAP-Elites at root if no strategy specified]
 ```
+
+**Note**: Each strategy uses `openevolve_output/<strategy_name>/` to keep results separate.
+You can override with `--output custom_dir/`.
 
 ## Extending with New Strategies
 

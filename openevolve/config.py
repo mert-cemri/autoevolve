@@ -312,6 +312,10 @@ class EvaluatorConfig:
     enable_artifacts: bool = True
     max_artifact_storage: int = 100 * 1024 * 1024  # 100MB per program
 
+    # Domain-specific settings (can be read by evolved programs via environment variables)
+    num_problems: Optional[int] = None  # Number of test problems (set via MATH_EVAL_PROBLEMS env var)
+    agent_model: Optional[str] = None   # LLM model for agents to use (set via OPENEVOLVE_MODEL env var)
+
 
 @dataclass
 class EvolutionTraceConfig:

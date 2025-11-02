@@ -61,10 +61,15 @@ class OpenEvolveWithStrategy(OpenEvolve):
         # Store strategy name
         self.strategy_name = strategy_name
 
-        # Set up output directory
-        self.output_dir = output_dir or os.path.join(
-            os.path.dirname(initial_program_path), "openevolve_output"
-        )
+        # Set up output directory with strategy-specific subdirectory
+        if output_dir:
+            self.output_dir = output_dir
+        else:
+            # Default: openevolve_output/<strategy_name>
+            base_output = os.path.join(
+                os.path.dirname(initial_program_path), "openevolve_output"
+            )
+            self.output_dir = os.path.join(base_output, strategy_name)
         os.makedirs(self.output_dir, exist_ok=True)
 
         # Call parent's setup methods (but skip database initialization)
@@ -210,7 +215,7 @@ class OpenEvolveWithStrategy(OpenEvolve):
 
             # Evaluate initial program
             initial_metrics = await self.evaluator.evaluate_program(
-                self.initial_program_code, initial_program_id
+                self.initial_program_code, initial_program_id, iteration=start_iteration
             )
 
             initial_program = Program(

@@ -59,3 +59,7 @@ problems
 # Local debug logs
 prompt_builder_logs.jsonl
 try.txt
+
+# Claude-generated documentation
+CLAUDE.md
+CONFIGURATION_GUIDE.md

@@ -133,6 +133,7 @@ class Evaluator:
         self,
         program_code: str,
         program_id: str = "",
+        iteration: Optional[int] = None,
     ) -> Dict[str, float]:
         """
         Evaluate a program and return scores
@@ -140,11 +141,53 @@ class Evaluator:
         Args:
             program_code: Code to evaluate
             program_id: Optional ID for logging
+            iteration: Optional iteration number (set as OPENEVOLVE_ITERATION env var for the program)
 
         Returns:
             Dictionary of metric name to score
         """
         start_time = time.time()
+
+        # Save current environment variables that we'll temporarily modify
+        old_iteration_env = os.environ.get('OPENEVOLVE_ITERATION')
+        old_num_problems_env = os.environ.get('MATH_EVAL_PROBLEMS')
+        old_agent_model_env = os.environ.get('OPENEVOLVE_MODEL')
+
+        # Set environment variables for the evaluation
+        # These can be read by evolved programs to configure their behavior
+        if iteration is not None:
+            os.environ['OPENEVOLVE_ITERATION'] = str(iteration)
+
+        if self.config.num_problems is not None:
+            os.environ['MATH_EVAL_PROBLEMS'] = str(self.config.num_problems)
+
+        if self.config.agent_model is not None:
+            os.environ['OPENEVOLVE_MODEL'] = self.config.agent_model
+
+        try:
+            return await self._evaluate_program_internal(program_code, program_id, start_time)
+        finally:
+            # Restore previous environment variable values
+            def restore_env(var_name: str, old_value: Optional[str]):
+                if old_value is not None:
+                    os.environ[var_name] = old_value
+                else:
+                    os.environ.pop(var_name, None)
+
+            restore_env('OPENEVOLVE_ITERATION', old_iteration_env)
+            restore_env('MATH_EVAL_PROBLEMS', old_num_problems_env)
+            restore_env('OPENEVOLVE_MODEL', old_agent_model_env)
+
+    async def _evaluate_program_internal(
+        self,
+        program_code: str,
+        program_id: str,
+        start_time: float,
+    ) -> Dict[str, float]:
+        """
+        Internal method that actually performs the evaluation
+        (separated to ensure environment variable cleanup in finally block)
+        """
         program_id_str = f" {program_id}" if program_id else ""
 
         # Check if artifacts are enabled

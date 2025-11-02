@@ -101,6 +101,18 @@ evaluator:
   use_llm_feedback: false  # Disable LLM feedback for speed
   max_retries: 2
 
+  # Math problem evaluation settings
+  num_problems: 100  # Number of problems to evaluate per iteration
+                     # Stage 1: 2 problems (quick validation)
+                     # Stage 2: 5 problems (medium evaluation)
+                     # Stage 3: 100 problems (full evaluation)
+
+  # LLM model for the multi-agent system
+  # This is the model that the agents (solver, verifier, refiner) will use
+  # Different from llm.primary_model which is used for EVOLVING the system
+  agent_model: "gpt-5-nano"  # Fast, cost-effective model for agents
+                              # Options: gpt-5-nano, gpt-5-mini, gpt-4o, etc.
+
 # Evolution settings
 diff_based_evolution: false  # Use full rewrites for multi-agent systems
 allow_full_rewrites: true

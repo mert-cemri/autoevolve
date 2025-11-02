@@ -1,0 +1,42 @@
+{
+  "iteration": 1,
+  "timestamp": "2025-11-01T14:36:44.889871",
+  "num_problems": 5,
+  "problems": [
+    {
+      "idx": 0,
+      "problem": "Some portions of the line $y=4 x$ lie below the curve $y=10 \\pi \\sin ^{2} x$, and other portions lie above the curve. Compute the sum of the lengths of all the segments of the graph of $y=4 x$ that lie in the first quadrant, below the graph of $y=10 \\pi \\sin ^{2} x$.",
+      "gold": "$\\frac{5 \\pi}{4} \\sqrt{17}$",
+      "pred": "y/4",
+      "llm_calls": 0
+    },
+    {
+      "idx": 1,
+      "problem": "Find all functions $f: \\mathbb{Q} \\rightarrow \\mathbb{Q}$ such that the equation\n\nholds for all rational numbers $x$ and $y$.\n\n$$\nf(x f(x)+y)=f(y)+x^{2}\n$$\n\nHere, $\\mathbb{Q}$ denotes the set of rational numbers.",
+      "gold": "$f(x)=x,f(x)=-x$",
+      "pred": "",
+      "llm_calls": 0
+    },
+    {
+      "idx": 2,
+      "problem": "2500 chess kings have to be placed on a $100 \\times 100$ chessboard so that\n\n(i) no king can capture any other one (i.e. no two kings are placed in two squares sharing a common vertex);\n\n(ii) each row and each column contains exactly 25 kings.\n\nFind the number of such arrangements. (Two arrangements differing by rotation or symmetry are supposed to be different.)",
+      "gold": "2",
+      "pred": "Verifier: APPROVED. Final: 10000",
+      "llm_calls": 0
+    },
+    {
+      "idx": 3,
+      "problem": "Determine all real numbers $x>0$ for which\n\n$$\n\\log _{4} x-\\log _{x} 16=\\frac{7}{6}-\\log _{x} 8\n$$",
+      "gold": "$2^{-2 / 3}$, $8$",
+      "pred": "e",
+      "llm_calls": 0
+    },
+    {
+      "idx": 4,
+      "problem": "A multiplicative partition of a positive integer $n \\geq 2$ is a way of writing $n$ as a product of one or more integers, each greater than 1. Note that we consider a positive integer to be a multiplicative partition of itself. Also, the order of the factors in a partition does not matter; for example, $2 \\times 3 \\times 5$ and $2 \\times 5 \\times 3$ are considered to be the same partition of 30 . For each positive integer $n \\geq 2$, define $P(n)$ to be the number of multiplicative partitions of $n$. We also define $P(1)=1$. Note that $P(40)=7$, since the multiplicative partitions of 40 are $40,2 \\times 20,4 \\times 10$, $5 \\times 8,2 \\times 2 \\times 10,2 \\times 4 \\times 5$, and $2 \\times 2 \\times 2 \\times 5$.\n\n(In each part, we use \"partition\" to mean \"multiplicative partition\". We also call the numbers being multiplied together in a given partition the \"parts\" of the partition.)\nDetermine the value of $P(64)$.",
+      "gold": "11",
+      "pred": "m",
+      "llm_calls": 0
+    }
+  ]
+}

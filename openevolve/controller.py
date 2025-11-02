@@ -266,7 +266,7 @@ class OpenEvolve:
 
             # Evaluate the initial program
             initial_metrics = await self.evaluator.evaluate_program(
-                self.initial_program_code, initial_program_id
+                self.initial_program_code, initial_program_id, iteration=start_iteration
             )
 
             initial_program = Program(
