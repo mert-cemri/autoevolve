@@ -48,34 +48,83 @@ class BestOfNStrategy(SearchStrategy):
         self.programs[program.id] = program
 
         # Determine lineage
-        if program.parent_id and program.parent_id in self.program_to_lineage:
-            # Child inherits parent's lineage
-            lineage_id = self.program_to_lineage[program.parent_id]
+        if program.parent_id and program.parent_id in self.programs:
+            # Get the parent to check if it has _temp_lineage (set during sampling)
+            parent = self.programs[program.parent_id]
+            
+            # CRITICAL: Check _temp_lineage first - this is the lineage the parent was sampled from
+            # This handles the case where same parent program (e.g., initial) is sampled from different lineages
+            if hasattr(parent, '_temp_lineage') and parent._temp_lineage is not None:
+                # Use the lineage that the parent was sampled from
+                lineage_id = parent._temp_lineage
+                # Clear the temp attribute after use
+                delattr(parent, '_temp_lineage')
+            elif program.parent_id in self.program_to_lineage:
+                # Fall back to parent's stored lineage
+                lineage_id = self.program_to_lineage[program.parent_id]
+            else:
+                # Parent has no lineage mapping - shouldn't happen, but handle gracefully
+                logger.warning(f"Parent {program.parent_id[:8]}... has no lineage mapping, assigning to lineage 0")
+                lineage_id = 0
+            
+            self.program_to_lineage[program.id] = lineage_id
+
+            # Update lineage if this program is better than current
+            current_id = self.lineages[lineage_id]
+            if current_id is None:
+                # First program in this lineage (shouldn't happen if parent exists)
+                self.lineages[lineage_id] = program.id
+                logger.info(f"Lineage {lineage_id} initialized with {program.id}")
+            else:
+                # Compare with current lineage head
+                current_program = self.programs[current_id]
+                if self._is_better(program, current_program):
+                    self.lineages[lineage_id] = program.id
+                    logger.info(
+                        f"Lineage {lineage_id} updated: {current_id} → {program.id} "
+                        f"(fitness: {get_fitness_score(current_program.metrics, [])} → "
+                        f"{get_fitness_score(program.metrics, [])})"
+                    )
         elif "lineage" in program.metadata:
             # Explicit lineage assignment
             lineage_id = program.metadata["lineage"]
-        else:
-            # Assign to first available lineage (for initial program)
-            lineage_id = next((i for i, pid in self.lineages.items() if pid is None), 0)
+            self.program_to_lineage[program.id] = lineage_id
 
-        self.program_to_lineage[program.id] = lineage_id
-
-        # Update lineage if this program is better than current
-        current_id = self.lineages[lineage_id]
-        if current_id is None:
-            # First program in this lineage
-            self.lineages[lineage_id] = program.id
-            logger.info(f"Lineage {lineage_id} initialized with {program.id}")
-        else:
-            # Compare with current lineage head
-            current_program = self.programs[current_id]
-            if self._is_better(program, current_program):
+            # Update lineage if this program is better than current
+            current_id = self.lineages[lineage_id]
+            if current_id is None:
                 self.lineages[lineage_id] = program.id
-                logger.info(
-                    f"Lineage {lineage_id} updated: {current_id} → {program.id} "
-                    f"(fitness: {get_fitness_score(current_program.metrics, [])} → "
-                    f"{get_fitness_score(program.metrics, [])})"
-                )
+                logger.info(f"Lineage {lineage_id} initialized with {program.id}")
+            else:
+                current_program = self.programs[current_id]
+                if self._is_better(program, current_program):
+                    self.lineages[lineage_id] = program.id
+                    logger.info(
+                        f"Lineage {lineage_id} updated: {current_id} → {program.id} "
+                        f"(fitness: {get_fitness_score(current_program.metrics, [])} → "
+                        f"{get_fitness_score(program.metrics, [])})"
+                    )
+        else:
+            # Initial program: initialize ALL lineages with the same program
+            # This ensures all N lineages start independently from the same base
+            all_empty = all(pid is None for pid in self.lineages.values())
+            if all_empty:
+                # Initialize all lineages with initial program
+                for lineage_id in range(self.n):
+                    self.lineages[lineage_id] = program.id
+                    self.program_to_lineage[program.id] = 0  # All point to same program, but we track lineage assignment
+                # For lineage tracking, we need to handle this specially
+                # The initial program exists once but all lineages reference it
+                # We'll assign it to lineage 0 for tracking purposes
+                self.program_to_lineage[program.id] = 0
+                logger.info(f"Initial program {program.id} initialized ALL {self.n} lineages")
+            else:
+                # Assign to first available lineage (shouldn't normally happen)
+                lineage_id = next((i for i, pid in self.lineages.items() if pid is None), 0)
+                self.program_to_lineage[program.id] = lineage_id
+                if self.lineages[lineage_id] is None:
+                    self.lineages[lineage_id] = program.id
+                    logger.info(f"Lineage {lineage_id} initialized with {program.id}")
 
         # Update global best
         self.update_best(program)

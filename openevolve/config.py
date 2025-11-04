@@ -196,6 +196,11 @@ class PromptConfig:
     # Number of examples to include in the prompt
     num_top_programs: int = 3
     num_diverse_programs: int = 2
+    
+    # Similar-parent evidence (semantic memory)
+    num_similar_parent_best: int = 3
+    num_similar_parent_worst: int = 3
+    include_similar_parent_worst: bool = True
 
     # Template stochasticity
     use_template_stochasticity: bool = True
@@ -314,6 +319,17 @@ class EvaluatorConfig:
 
 
 @dataclass
+class MemoryConfig:
+    """Configuration for memory store (semantic memory for evolution)"""
+    
+    enabled: bool = False
+    snapshot_path: Optional[str] = None  # If None, auto-set to output_dir/memory_snapshot.json
+    semantic_search_topk: int = 3  # Number of similar parents to find for semantic search
+    embed_model: str = "text-embedding-3-large"  # OpenAI embedding model for semantic search
+    load_from_snapshot: bool = False  # If True, load existing snapshot at startup (additive, continues from loaded state)
+
+
+@dataclass
 class EvolutionTraceConfig:
     """Configuration for evolution trace logging"""
     
@@ -345,6 +361,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -354,6 +371,14 @@ class Config:
     early_stopping_patience: Optional[int] = None
     convergence_threshold: float = 0.001
     early_stopping_metric: str = "combined_score"
+
+    # Strategy-specific settings (optional, used by search strategies)
+    search_strategy: Optional[str] = None
+    beam_width: Optional[int] = None
+    branch_factor: Optional[int] = None
+    n_lineages: Optional[int] = None
+    expansion_width: Optional[int] = None  # MCTS: number of children per node expansion
+    exploration_constant: Optional[float] = None  # MCTS: UCT exploration constant (default: sqrt(2) ≈ 1.414)
 
     @classmethod
     def from_yaml(cls, path: Union[str, Path]) -> "Config":
@@ -369,9 +394,12 @@ class Config:
         config = Config()
 
         # Update top-level fields
+        # Include strategy-specific fields: beam_width, branch_factor, n_lineages, search_strategy, expansion_width, exploration_constant
+        strategy_fields = ["beam_width", "branch_factor", "n_lineages", "search_strategy", "expansion_width", "exploration_constant"]
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
-                setattr(config, key, value)
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "memory"]:
+                if hasattr(config, key) or key in strategy_fields:
+                    setattr(config, key, value)
 
         # Update nested configs
         if "llm" in config_dict:
@@ -395,6 +423,15 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
+        if "memory" in config_dict:
+            memory_dict = config_dict["memory"]
+            config.memory = MemoryConfig(
+                enabled=memory_dict.get("enabled", False),
+                snapshot_path=memory_dict.get("snapshot_path"),
+                semantic_search_topk=memory_dict.get("semantic_search_topk", 3),
+                embed_model=memory_dict.get("embed_model", "text-embedding-3-large"),
+                load_from_snapshot=memory_dict.get("load_from_snapshot", False),
+            )
 
         return config
 
@@ -425,6 +462,9 @@ class Config:
                 "evaluator_system_message": self.prompt.evaluator_system_message,
                 "num_top_programs": self.prompt.num_top_programs,
                 "num_diverse_programs": self.prompt.num_diverse_programs,
+                "num_similar_parent_best": self.prompt.num_similar_parent_best,
+                "num_similar_parent_worst": self.prompt.num_similar_parent_worst,
+                "include_similar_parent_worst": self.prompt.include_similar_parent_worst,
                 "use_template_stochasticity": self.prompt.use_template_stochasticity,
                 "template_variations": self.prompt.template_variations,
                 # Note: meta-prompting features not implemented
@@ -471,6 +511,13 @@ class Config:
                 "output_path": self.evolution_trace.output_path,
                 "buffer_size": self.evolution_trace.buffer_size,
                 "compress": self.evolution_trace.compress,
+            },
+            "memory": {
+                "enabled": self.memory.enabled,
+                "snapshot_path": self.memory.snapshot_path,
+                "semantic_search_topk": self.memory.semantic_search_topk,
+                "embed_model": self.memory.embed_model,
+                "load_from_snapshot": self.memory.load_from_snapshot,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,

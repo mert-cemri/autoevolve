@@ -1,17 +1,33 @@
-# Configuration for circle packing constructor evolution (n=26)
-max_iterations: 100  # Increased iterations
+# Configuration for circle packing constructor evolution (n=26) - BEST-OF-N WITH MEMORY
+# search_strategy: "best_of_n"
+# n_lineages: 4  # Number of parallel lineages (adjust as needed)
+
+# Configuration for circle packing constructor evolution (n=26) - BEAM SEARCH WITH MEMORY
+# search_strategy: "beam_search"
+# beam_width: 2          # Keep top M programs in beam
+# branch_factor: 4       # Generate N candidates per beam cycle
+
+# Configuration for circle packing constructor evolution (n=26) - MCTS (Monte Carlo Tree Search)
+search_strategy: "mcts"
+expansion_width: 3      # Number of children generated per node expansion (for fair comparison: similar to branch_factor)
+exploration_constant: 1.414  # UCT exploration constant (sqrt(2), standard MCTS value)
+
+# DEFAULT OPENEVOLVE (MAP-Elites) - No strategy specified
+# (Uses default island-based evolution)
+
+max_iterations: 30  # Test run
 checkpoint_interval: 10
 log_level: "INFO"
 
 # LLM configuration
 llm:
-  primary_model: "google/gemini-2.0-flash-001"
+  primary_model: "gpt-5-mini"
   # primary_model: "llama3.1-8b"
   primary_model_weight: 0.8
-  secondary_model: "anthropic/claude-3.7-sonnet"
+  secondary_model: "gpt-5-nano"
   # secondary_model: "llama-4-scout-17b-16e-instruct"
   secondary_model_weight: 0.2
-  api_base: "https://openrouter.ai/api/v1"
+  # api_base: "https://openrouter.ai/api/v1"
   # api_base: "https://api.cerebras.ai/v1"
   temperature: 0.7
   top_p: 0.95
@@ -32,14 +48,19 @@ prompt:
     - Perfect symmetry may not yield the optimal packing due to edge effects
 
     Focus on designing an explicit constructor that places each circle in a specific position, rather than an iterative search algorithm.
+    Leverage memory to improve the program, not to copy or reuse, but to find what aspects where checked earlier and whether they worked on not.
   num_top_programs: 3
   use_template_stochasticity: true
+  # Similar-parent evidence parameters (used with memory when enabled):
+  # num_similar_parent_best: 3  # Number of best similar parent changes to include (default: 3)
+  # num_similar_parent_worst: 3  # Number of worst similar parent changes to include (default: 3)
+  # include_similar_parent_worst: true  # Whether to include worst examples to avoid regressions (default: true)
 
 # Database configuration
 database:
   population_size: 60  # Increased population for more diversity
   archive_size: 25
-  num_islands: 4
+  num_islands: 1
   elite_selection_ratio: 0.3
   exploitation_ratio: 0.7
 
@@ -48,9 +69,19 @@ evaluator:
   timeout: 60
   cascade_evaluation: true
   cascade_thresholds: [0.5, 0.75]
-  parallel_evaluations: 4
+  parallel_evaluations: 1
   use_llm_feedback: false
 
 # Evolution settings
 diff_based_evolution: false  # Use full rewrites instead of diffs
 allow_full_rewrites: true    # Allow full rewrites for constructor functions
+
+# Memory configuration (semantic memory for evolution)
+# LOAD PRE-LEARNED MEMORY FROM BEST-OF-N RUN
+memory:
+  enabled: true  # Enable memory store for this example
+  # Load from Best-of-N memory snapshot (contains 30 iterations of evolution knowledge)
+  snapshot_path: "examples/circle_packing/openevolve_output_bon_30_with_mem/memory_snapshot.json"  # Path to Best-of-N memory (relative to project root, or use absolute path)
+  load_from_snapshot: true  # Load existing snapshot on startup (default: false) - MUST BE boolean: true, not "yes"
+  semantic_search_topk: 3  # Number of similar parents to find for semantic search (default: 3)
+  embed_model: "text-embedding-3-large"  # OpenAI embedding model for semantic search (default: "text-embedding-3-large")

@@ -107,7 +107,6 @@ async def main_async() -> int:
 
     # If strategy is specified, auto-select config file if not provided
     if strategy_name and not args.config:
-        import os
         base_dir = os.path.dirname(args.initial_program)
         default_config = os.path.join(base_dir, f"config_{strategy_name}.yaml")
         if os.path.exists(default_config):

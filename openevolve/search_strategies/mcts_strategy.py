@@ -33,6 +33,10 @@ class MCTSNode:
         if self.visits == 0:
             return float('inf')
 
+        if self.parent is None:
+            # Root node: no exploration term needed
+            return self.total_reward / self.visits
+
         exploitation = self.total_reward / self.visits
         exploration = exploration_constant * math.sqrt(
             math.log(self.parent.visits) / self.visits
@@ -79,10 +83,17 @@ class MCTSStrategy(SearchStrategy):
         # Pending expansions: nodes that need children generated
         self.pending_expansions: List[Tuple[MCTSNode, int]] = []  # (node, child_index)
 
-        logger.info(
-            f"Initialized MCTS strategy with expansion_width={self.expansion_width}, "
-            f"exploration_constant={self.exploration_constant}"
-        )
+        # Log configuration clearly
+        logger.info("=" * 80)
+        logger.info("MCTS STRATEGY INITIALIZATION")
+        logger.info("=" * 80)
+        logger.info(f"  expansion_width:    {self.expansion_width} (config value: {getattr(config, 'expansion_width', 'NOT SET - using default 3')})")
+        logger.info(f"  exploration_constant: {self.exploration_constant} (config value: {getattr(config, 'exploration_constant', 'NOT SET - using default 1.414')})")
+        memory_enabled = False
+        if hasattr(config, 'memory') and config.memory:
+            memory_enabled = getattr(config.memory, 'enabled', False)
+        logger.info(f"  memory_enabled:      {memory_enabled}")
+        logger.info("=" * 80)
 
     def add_program(self, program: Program, iteration: int) -> None:
         """Add program to MCTS tree."""

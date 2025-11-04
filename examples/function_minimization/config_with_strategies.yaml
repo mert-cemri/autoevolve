@@ -1,0 +1,129 @@
+# Configuration for function minimization evolution - All Strategies
+# Toggle memory by changing memory.enabled: true/false
+# Uncomment the strategy you want to use (leave all commented for default OpenEvolve)
+
+# ============================================================================
+# STRATEGY SELECTION (Uncomment ONE strategy below)
+# ============================================================================
+
+# BEST-OF-N STRATEGY
+# search_strategy: "best_of_n"
+# n_lineages: 4  # Number of parallel lineages (adjust as needed)
+
+# BEAM SEARCH STRATEGY
+# search_strategy: "beam_search"
+# beam_width: 2          # Keep top M programs in beam
+# branch_factor: 4       # Generate N candidates per beam cycle
+
+# MCTS STRATEGY (Monte Carlo Tree Search)
+# search_strategy: "mcts"
+# expansion_width: 3      # Number of children generated per node expansion (for fair comparison: similar to branch_factor)
+# exploration_constant: 1.414  # UCT exploration constant (sqrt(2), standard MCTS value)
+
+# DEFAULT OPENEVOLVE (MAP-Elites) - No strategy specified (leave all above commented)
+# (Uses default island-based evolution)
+
+# ============================================================================
+# EVOLUTION SETTINGS
+# ============================================================================
+
+max_iterations: 30  # Number of iterations
+checkpoint_interval: 10  # Save checkpoint every N iterations
+log_level: "INFO"
+
+# ============================================================================
+# LLM CONFIGURATION
+# ============================================================================
+
+llm:
+  primary_model: "gpt-5-mini"
+  # primary_model: "llama3.1-8b"
+  primary_model_weight: 0.8
+  secondary_model: "gpt-5-nano"
+  # secondary_model: "llama-4-scout-17b-16e-instruct"
+  secondary_model_weight: 0.2
+  # api_base: "https://openrouter.ai/api/v1"
+  # api_base: "https://api.cerebras.ai/v1"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 8192
+  timeout: 600
+
+# ============================================================================
+# PROMPT CONFIGURATION
+# ============================================================================
+
+prompt:
+  system_message: |
+    You are an expert programmer specializing in optimization algorithms. Your task is to improve a function minimization algorithm to find the global minimum of a complex non-convex function with many local minima.
+    
+    The target function is: f(x, y) = sin(x) * cos(y) + sin(x*y) + (x^2 + y^2)/20
+    
+    Key optimization challenges:
+    - The function has multiple local minima that can trap simple algorithms
+    - The global minimum is approximately at (-1.704, 0.678) with value -1.519
+    - Search space bounds are (-5, 5) for both x and y
+    - Simple random search often gets stuck in local minima
+    - Need to balance exploration (finding new regions) and exploitation (refining good solutions)
+    
+    Common techniques that work well:
+    - Simulated annealing (temperature-based acceptance of worse solutions)
+    - Adaptive step sizes (large steps early, small steps near convergence)
+    - Stagnation detection (increase exploration when progress stalls)
+    - Multi-start approaches (try multiple initial points)
+    - Gradient-free methods (function has no closed-form gradient)
+    
+    Focus on improving the search_algorithm function to reliably find the global minimum, escaping local minima that might trap simple algorithms.
+    Leverage memory to improve the program, not to copy or reuse, but to learn what strategies worked earlier and avoid what didn't.
+  num_top_programs: 3
+  use_template_stochasticity: true
+  # Similar-parent evidence parameters (used with memory when enabled):
+  # num_similar_parent_best: 3  # Number of best similar parent changes to include (default: 3)
+  # num_similar_parent_worst: 3  # Number of worst similar parent changes to include (default: 3)
+  # include_similar_parent_worst: true  # Whether to include worst examples to avoid regressions (default: true)
+
+# ============================================================================
+# DATABASE CONFIGURATION (MAP-Elites)
+# ============================================================================
+
+database:
+  population_size: 60  # Increased population for more diversity
+  archive_size: 25
+  num_islands: 1
+  elite_selection_ratio: 0.3
+  exploitation_ratio: 0.7
+
+# ============================================================================
+# EVALUATOR CONFIGURATION
+# ============================================================================
+
+evaluator:
+  timeout: 60
+  cascade_thresholds: [1.3] # Multi-stage evaluation for efficiency
+  parallel_evaluations: 1
+
+# ============================================================================
+# EVOLUTION SETTINGS
+# ============================================================================
+
+evolution_trace:
+  enabled: true
+  format: "jsonl"
+  include_code: false
+  include_prompts: true
+
+diff_based_evolution: true  # Use full rewrites instead of diffs
+max_code_length: 20000
+
+# ============================================================================
+# MEMORY CONFIGURATION (Semantic Memory for Evolution)
+# ============================================================================
+# TOGGLE MEMORY: Change enabled: true to enabled: false (or vice versa)
+
+memory:
+  enabled: false  # TOGGLE THIS: true = with memory, false = without memory
+  # snapshot_path: null  # Auto-set to output_dir/memory_snapshot.json if not specified
+  load_from_snapshot: false  # Load existing snapshot on startup (default: false)
+  semantic_search_topk: 3  # Number of similar parents to find for semantic search (default: 3)
+  embed_model: "text-embedding-3-large"  # OpenAI embedding model for semantic search (default: "text-embedding-3-large")
+
