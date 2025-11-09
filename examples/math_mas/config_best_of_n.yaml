@@ -26,19 +26,73 @@ llm:
 prompt:
   system_message: |
     You are an expert in multi-agent system design and mathematical problem solving.
-    Your task is to evolve a multi-agent system that collaboratively solves mathematical problems.
+    Your task is to EVOLVE THE ENTIRE MULTI-AGENT ARCHITECTURE to solve OlympiadBench problems.
 
-    The system has up to 4 agents with configurable:
-    - System prompts (defining agent roles and expertise)
-    - Communication protocols (how agents interact)
-    - Workflow structure (agent sequence and decision logic)
+    WHAT YOU CAN EVOLVE (all within EVOLVE-BLOCK):
 
-    Key aspects to optimize:
-    1. AGENT PROMPTS: Design effective system prompts for each agent role
-    2. COMMUNICATION PROTOCOLS: Optimize how agents interact
-    3. WORKFLOW STRUCTURE: Improve the agent coordination
+    1. AGENT PROMPTS - Design effective instructions for each agent:
+       - Solver: Problem-solving approach, reasoning style, breakdown strategies
+       - Verifier: Verification criteria, feedback format, decision logic
+       - Reviser: Revision strategies, error correction, step clarification
+       - Refiner: Final polishing, simplification, answer formatting
+       - You can modify prompts to be more specific, add examples, change reasoning style
 
-    Focus on improving correctness while maintaining reasonable computation time.
+    2. AGENT ARCHITECTURE - The multi-agent system structure:
+       - Number of agents (can add/remove agents in solve_problem())
+       - Agent roles (create new specialized agents if needed)
+       - Communication order (who talks to whom, in what sequence)
+       - Information flow (what information each agent receives)
+
+    3. COMMUNICATION PROTOCOLS - AgentConfig parameters:
+       - MAX_REVISION_ROUNDS: How many solver-verifier-reviser cycles (0-5)
+       - USE_VERIFIER: Whether to verify solutions (True/False)
+       - USE_REFINER: Whether to polish final answers (True/False)
+       - Decision thresholds: When to approve, when to revise, when to stop
+
+    4. ORCHESTRATION LOGIC - The solve_problem() function:
+       - Agent execution order and control flow
+       - Conditional logic (when to call which agent)
+       - Early stopping conditions (high confidence, timeout prevention)
+       - Revision loop structure (sequential vs. parallel, voting mechanisms)
+       - Error handling and fallback strategies
+
+    5. HELPER FUNCTIONS - Decision and extraction logic:
+       - extract_decision(): How to parse verifier responses
+       - extract_boxed_answer(): How to extract final answers
+       - Agent functions: Can modify how agents are called
+
+    IMPORTANT CONSTRAINTS:
+    - Do NOT modify code outside EVOLVE-BLOCK (framework is fixed)
+    - Must call call_llm() to interact with LLMs (don't reimplement)
+    - Must return dict with 'answer', 'pred', 'llm_calls', 'conversation'
+    - Keep final answer in \\boxed{} format for evaluation
+
+    OPTIMIZATION GOALS:
+    - PRIMARY: Maximize accuracy on OlympiadBench (hard competition math)
+    - SECONDARY: Minimize LLM calls (efficiency)
+    - TERTIARY: Minimize time (but accuracy >> speed)
+
+    PROBLEM CHARACTERISTICS:
+    - OlympiadBench problems are HARD (competition-level math)
+    - Require multi-step reasoning, not single-shot answers
+    - May need problem decomposition, verification, revision
+    - Common issues: computational errors, logical gaps, incomplete reasoning
+
+    EVOLUTION STRATEGIES:
+    - For LOW accuracy: Improve solver prompt, add more revision rounds, enhance verification
+    - For HIGH llm_calls: Reduce MAX_REVISION_ROUNDS, add early stopping, merge agent roles
+    - For TIMEOUT: Add early stopping, reduce complexity, use simpler agents
+    - For PARSE errors: Improve extract_decision() and extract_boxed_answer() logic
+
+    EXAMPLE ARCHITECTURES TO EXPLORE:
+    - Sequential: Solver → Verifier → Reviser → Refiner (current)
+    - Iterative: Solver ⟷ Verifier loop until approved
+    - Hierarchical: Planner → Solver → Verifier → Refiner
+    - Parallel: Multiple solvers → Voter → Refiner
+    - Adaptive: Use verifier confidence to decide next step
+
+    Focus on evolving an architecture that achieves HIGH ACCURACY on hard math problems
+    while maintaining reasonable efficiency (5-10 LLM calls per problem is acceptable).
 
   num_top_programs: 3
   num_diverse_programs: 2
@@ -51,7 +105,7 @@ database:
 
 # Evaluator configuration
 evaluator:
-  timeout: 600
+  timeout: 1800  # 30 minutes (increased for multi-agent systems)
   cascade_evaluation: true
   cascade_thresholds: [0.3, 0.6]
   parallel_evaluations: 4
@@ -59,7 +113,7 @@ evaluator:
   max_retries: 2
 
   # Math problem evaluation settings
-  num_problems: 100  # Number of problems for full evaluation
+  num_problems: 20  # Number of problems for full evaluation (Stage 3)
   agent_model: "gpt-5-nano"  # Model for multi-agent system agents
 
 # Evolution settings

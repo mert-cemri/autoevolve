@@ -5,6 +5,10 @@ Standalone Test Script for Multi-Agent Math Solving Programs
 This script evaluates any program on a specified number of math problems
 with a configurable random seed for reproducible test/train splits.
 
+IMPORTANT: Run this script within the 'autoevolve' conda environment:
+    conda activate autoevolve
+    python test_program.py path/to/program.py --num-problems 100 --seed 42
+
 Usage:
     python test_program.py path/to/program.py --num-problems 100 --seed 42
     python test_program.py openevolve_output/best/best_program.py --seed 99
@@ -273,8 +277,8 @@ Examples:
     parser.add_argument(
         '--num-problems', '-n',
         type=int,
-        default=100,
-        help='Number of problems to evaluate (default: 100, use -1 for all 675)'
+        default=20,
+        help='Number of problems to evaluate (default: 20, use -1 for all 675)'
     )
 
     parser.add_argument(

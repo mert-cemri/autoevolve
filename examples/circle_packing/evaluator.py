@@ -282,10 +282,13 @@ def evaluate_stage1(program_path):
     """
     First stage evaluation - quick validation check
     """
+    start_time = time.time()
+
     try:
         # Use the simplified subprocess approach
         try:
             centers, radii, sum_radii = run_with_timeout(program_path, timeout_seconds=600)
+            eval_time = time.time() - start_time
 
             # Ensure centers and radii are numpy arrays
             if not isinstance(centers, np.ndarray):
@@ -297,7 +300,14 @@ def evaluate_stage1(program_path):
             shape_valid = centers.shape == (26, 2) and radii.shape == (26,)
             if not shape_valid:
                 print(f"Invalid shapes: centers={centers.shape}, radii={radii.shape}")
-                return {"validity": 0.0, "error": "Invalid shapes"}
+                return {
+                    "validity": 0.0,
+                    "sum_radii": 0.0,
+                    "target_ratio": 0.0,
+                    "combined_score": 0.0,
+                    "eval_time": float(eval_time),
+                    "error": "Invalid shapes"
+                }
 
             valid = validate_packing(centers, radii)
 
@@ -316,20 +326,45 @@ def evaluate_stage1(program_path):
                 "sum_radii": float(actual_sum),
                 "target_ratio": float(actual_sum / target if valid else 0.0),
                 "combined_score": float(combined_score),
+                "eval_time": float(eval_time),
             }
 
         except TimeoutError as e:
             print(f"Stage 1 evaluation timed out: {e}")
-            return {"validity": 0.0, "combined_score": 0.0, "error": "Timeout"}
+            eval_time = time.time() - start_time
+            return {
+                "validity": 0.0,
+                "sum_radii": 0.0,
+                "target_ratio": 0.0,
+                "combined_score": 0.0,
+                "eval_time": float(eval_time),
+                "error": "Timeout"
+            }
         except Exception as e:
             print(f"Stage 1 evaluation failed: {e}")
             print(traceback.format_exc())
-            return {"validity": 0.0, "combined_score": 0.0, "error": str(e)}
+            eval_time = time.time() - start_time
+            return {
+                "validity": 0.0,
+                "sum_radii": 0.0,
+                "target_ratio": 0.0,
+                "combined_score": 0.0,
+                "eval_time": float(eval_time),
+                "error": str(e)
+            }
 
     except Exception as e:
         print(f"Stage 1 evaluation failed completely: {e}")
         print(traceback.format_exc())
-        return {"validity": 0.0, "combined_score": 0.0, "error": str(e)}
+        eval_time = time.time() - start_time
+        return {
+            "validity": 0.0,
+            "sum_radii": 0.0,
+            "target_ratio": 0.0,
+            "combined_score": 0.0,
+            "eval_time": float(eval_time),
+            "error": str(e)
+        }
 
 
 def evaluate_stage2(program_path):

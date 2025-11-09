@@ -483,16 +483,23 @@ class Evaluator:
                 stage2_eval_result = self._process_evaluation_result(stage2_result)
             except asyncio.TimeoutError:
                 logger.warning(f"Stage 2 evaluation timed out after {self.config.timeout}s")
-                # Capture stage 2 failure, but keep stage 1 results
-                stage1_eval_result.artifacts.update(
-                    {
+                # Return low score for timeout (don't use Stage 1 score as it's misleading)
+                # Programs that timeout on Stage 2 should be scored low, not high
+                return EvaluationResult(
+                    metrics={
+                        "stage1_passed": stage1_eval_result.metrics.get("validation_passed", 1.0),
+                        "stage2_passed": 0.0,
+                        "accuracy": 0.0,  # Low score for timeout
+                        "avg_llm_calls": 0.0,  # No data available for timeout
+                        "combined_score": 0.1,  # Small non-zero score so it's not completely discarded
+                        "timeout": True,
+                    },
+                    artifacts={
+                        **stage1_eval_result.artifacts,
                         "stage2_timeout": True,
                         "failure_stage": "stage2",
-                    }
+                    },
                 )
-                stage1_eval_result.metrics["stage2_passed"] = 0.0
-                stage1_eval_result.metrics["timeout"] = True
-                return stage1_eval_result
             except Exception as e:
                 logger.error(f"Error in stage 2 evaluation: {str(e)}")
                 # Capture stage 2 failure, but keep stage 1 results
@@ -545,16 +552,26 @@ class Evaluator:
                 stage3_eval_result = self._process_evaluation_result(stage3_result)
             except asyncio.TimeoutError:
                 logger.warning(f"Stage 3 evaluation timed out after {self.config.timeout}s")
-                # Capture stage 3 failure, but keep previous results
-                merged_result.artifacts.update(
-                    {
+                # Return partial score for Stage 3 timeout
+                # Use Stage 2 accuracy but penalize with low combined_score
+                stage2_accuracy = merged_result.metrics.get("accuracy", 0.0)
+                stage2_llm_calls = merged_result.metrics.get("avg_llm_calls", 0.0)
+                return EvaluationResult(
+                    metrics={
+                        "stage1_passed": merged_result.metrics.get("stage1_passed", 1.0),
+                        "stage2_passed": merged_result.metrics.get("stage2_passed", 1.0),
+                        "stage3_passed": 0.0,
+                        "accuracy": stage2_accuracy,  # Keep Stage 2 accuracy
+                        "avg_llm_calls": stage2_llm_calls,  # Keep Stage 2 LLM calls
+                        "combined_score": stage2_accuracy * 0.5,  # Penalize timeout (50% of Stage 2 score)
+                        "timeout": True,
+                    },
+                    artifacts={
+                        **merged_result.artifacts,
                         "stage3_timeout": True,
                         "failure_stage": "stage3",
-                    }
+                    },
                 )
-                merged_result.metrics["stage3_passed"] = 0.0
-                merged_result.metrics["timeout"] = True
-                return merged_result
             except Exception as e:
                 logger.error(f"Error in stage 3 evaluation: {str(e)}")
                 # Capture stage 3 failure, but keep previous results

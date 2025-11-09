@@ -1,9 +1,14 @@
 #!/bin/bash
-# Run Beam Search evolution for 100 iterations with 100 questions
+# Run Beam Search evolution for 100 iterations with 20 questions
+
+# Activate conda environment
+# Note: If this fails, run manually: conda activate autoevolve
+eval "$(conda shell.bash hook)" 2>/dev/null || true
+conda activate autoevolve 2>/dev/null || echo "Warning: Could not activate conda environment. Please run: conda activate autoevolve"
 
 # Configuration
 ITERATIONS=${1:-100}
-NUM_PROBLEMS=${2:-100}
+NUM_PROBLEMS=${2:-20}
 
 # Set environment
 export MATH_EVAL_PROBLEMS=$NUM_PROBLEMS

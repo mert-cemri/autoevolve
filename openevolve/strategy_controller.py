@@ -126,6 +126,62 @@ class OpenEvolveWithStrategy(OpenEvolve):
 
         logger.info(f"Initialized OpenEvolve with {strategy_name} strategy")
 
+        # Initialize add-only memory store (only if enabled in config)
+        self.memory_store = None
+        if self.config.memory.enabled:
+            try:
+                import os as _oe_os
+                # Set snapshot path: use config path or default to output_dir/memory_snapshot.json
+                # If loading from snapshot, use snapshot_path for loading but write to output_dir
+                load_path = None
+                if self.config.memory.snapshot_path:
+                    load_path = self.config.memory.snapshot_path
+                    # Write to output_dir, not the source snapshot (to avoid overwriting source)
+                    snapshot_path = os.path.join(self.output_dir, "memory_snapshot.json")
+                else:
+                    snapshot_path = os.path.join(self.output_dir, "memory_snapshot.json")
+                _oe_os.environ["MEMORY_SNAPSHOT_PATH"] = snapshot_path
+                # Set embedding model from config
+                _oe_os.environ["OPENAI_EMBED_MODEL"] = self.config.memory.embed_model
+                from memory.in_memory import InMemoryMemoryStore as _OEInMemoryMemoryStore
+                self.memory_store = _OEInMemoryMemoryStore()
+                
+                # Load from existing snapshot if configured
+                if self.config.memory.load_from_snapshot:
+                    if load_path is None:
+                        load_path = snapshot_path
+                    if os.path.exists(load_path):
+                        try:
+                            entries_count, embeddings_count = self.memory_store.load_from_snapshot(load_path)
+                            logger.info(
+                                f"Loaded existing memory snapshot: {entries_count} entries, "
+                                f"{embeddings_count} embeddings. Continuing evolution with accumulated knowledge."
+                            )
+                        except Exception as load_exc:
+                            logger.warning(
+                                f"Failed to load memory snapshot from {load_path}: {load_exc}. "
+                                f"Starting with empty memory store.",
+                                exc_info=True,
+                            )
+                    else:
+                        logger.info(
+                            f"Memory snapshot not found at {load_path}. Starting with empty memory store."
+                        )
+                
+                logger.info(
+                    f"Memory store initialized successfully (snapshot: {snapshot_path}, "
+                    f"embed_model: {self.config.memory.embed_model}, "
+                    f"semantic_search_topk: {self.config.memory.semantic_search_topk})"
+                )
+            except Exception as _init_exc:
+                logger.warning(
+                    f"Memory store initialization failed; continuing without memory. Error: {_init_exc}",
+                    exc_info=True,
+                )
+                self.memory_store = None
+        else:
+            logger.debug("Memory store disabled in config")
+            
         # Initialize evolution tracer
         self.evolution_tracer = None
         if self.config.evolution_trace.enabled:
@@ -238,7 +294,16 @@ class OpenEvolveWithStrategy(OpenEvolve):
                 self.evolution_tracer,
                 file_suffix=self.config.file_suffix
             )
+            # Wire memory store to parallel controller if enabled
+            self.parallel_controller.memory_store = getattr(self, "memory_store", None)
+            import os as _oe_os
+            self.parallel_controller.memory_log_path = _oe_os.path.join(self.output_dir, "memory_add_log.jsonl")
+            if self.parallel_controller.memory_store:
+                logger.info("Memory store wired to parallel controller")
+            else:
+                logger.debug("Memory store not available for parallel controller")
 
+            
             # Set up signal handlers
             import signal
             def signal_handler(signum, frame):
