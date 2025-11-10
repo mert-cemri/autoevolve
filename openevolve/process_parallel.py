@@ -3,8 +3,10 @@ Process-based parallel controller for true parallelism
 """
 
 import asyncio
+import json
 import logging
 import multiprocessing as mp
+import os
 import pickle
 import signal
 import time
@@ -166,6 +168,59 @@ def _run_iteration_worker(
         # Best programs only (for previous attempts section, focused on top performers)
         best_programs_only = island_programs[: _worker_config.prompt.num_top_programs]
 
+        # Log semantic search (supplied by controller) just before building prompt
+        # Only log if memory is enabled (indicated by presence of semantic_parent_log in snapshot)
+        sem_log = db_snapshot.get("semantic_parent_log") if isinstance(db_snapshot, dict) else None
+        if sem_log is not None:
+            logger.info(f"Memory (worker): Starting semantic search logging for iteration {iteration}, parent={parent.id}")
+        try:
+            if not isinstance(db_snapshot, dict):
+                logger.warning(f"Memory (worker): db_snapshot is not a dict (type: {type(db_snapshot)})")
+            elif sem_log is not None:
+                # Debug: log what keys are in db_snapshot (only when memory is enabled)
+                snapshot_keys = list(db_snapshot.keys())
+                logger.info(f"Memory (worker): db_snapshot keys for iteration {iteration}: {snapshot_keys}")
+
+                sem_details = db_snapshot.get("semantic_parent_details")
+                logger.info(f"Memory (worker): sem_log type={type(sem_log)}, sem_details type={type(sem_details)}")
+
+                if isinstance(sem_log, dict):
+                    topk = sem_log.get("topk")
+                    parents_list = sem_log.get("parents") or []
+                    results_count = sem_log.get("results_count", 0)
+                    if parents_list:
+                        logger.info(
+                            f"Memory (worker): Semantic search for parent={parent.id}, topk={topk}, found {results_count} results, parent_ids={parents_list}"
+                        )
+                    elif results_count > 0:
+                        # Results found but no parent IDs (unusual but log it)
+                        logger.info(
+                            f"Memory (worker): Semantic search for parent={parent.id}, topk={topk}, found {results_count} results, but no parent_ids available"
+                        )
+                    else:
+                        logger.info(f"Memory (worker): Semantic search for parent={parent.id}, topk={topk}, no results found")
+                elif sem_log is not None:
+                    logger.warning(f"Memory (worker): Semantic search log exists but is not a dict (type: {type(sem_log)}) for parent={parent.id}")
+                # If sem_log is None, memory is disabled - don't log anything
+                if isinstance(sem_details, list) and sem_details:
+                    preview = [
+                        {
+                            "parent": d.get("parent_id"),
+                            "child": d.get("child_id"),
+                            "parent_combined": d.get("parent_combined_score"),
+                            "child_combined": d.get("child_combined_score"),
+                            "delta": d.get("delta_combined_score"),
+                        }
+                        for d in sem_details[: min(5, len(sem_details))]
+                    ]
+                    logger.info(f"Memory (worker): Semantic search details for iteration {iteration}: {len(sem_details)} entries, preview (first 5): {preview}")
+                elif isinstance(sem_details, list) and not sem_details:
+                    logger.info(f"Memory (worker): Semantic search details exists but is empty for iteration {iteration}")
+                elif sem_details is not None:
+                    logger.warning(f"Memory (worker): Semantic search details exists but is not a list (type: {type(sem_details)}) for iteration {iteration}")
+        except Exception as e:
+            logger.error(f"Memory (worker): Semantic search logging failed for iteration {iteration}: {e}", exc_info=True)
+
         # Build prompt
         prompt = _worker_prompt_sampler.build_prompt(
             current_program=parent.code,
@@ -174,6 +229,7 @@ def _run_iteration_worker(
             previous_programs=[p.to_dict() for p in best_programs_only],
             top_programs=[p.to_dict() for p in programs_for_prompt],
             inspirations=[p.to_dict() for p in inspirations],
+            similar_parent_changes=db_snapshot.get("semantic_parent_details", []),
             language=_worker_config.language,
             evolution_round=iteration,
             diff_based_evolution=_worker_config.diff_based_evolution,
@@ -300,6 +356,13 @@ class ProcessParallelController:
 
         logger.info(f"Initialized process parallel controller with {self.num_workers} workers")
         logger.info(f"Worker-to-island mapping: {self.worker_island_map}")
+
+        # Track iteration context to log failures to memory with parent and island
+        self.iteration_context: Dict[int, Tuple[Optional[str], Optional[int]]] = {}
+
+        # Memory store and logging path (set by controller)
+        self.memory_store = None
+        self.memory_log_path: Optional[str] = None
 
     def _serialize_config(self, config: Config) -> dict:
         """Serialize config object to a dictionary that can be pickled"""
@@ -474,6 +537,67 @@ class ProcessParallelController:
 
                 if result.error:
                     logger.warning(f"Iteration {completed_iteration} error: {result.error}")
+                    # Add failure record to memory so failures are searchable (failure_signature, status=fail)
+                    try:
+                        memory_store = getattr(self, "memory_store", None)
+                        if memory_store is not None:
+                            from memory.schemas import MemoryEntry
+                            import uuid as _uuid
+                            # Use iteration_context for robust parent/island lookup
+                            parent_id, island_id = self.iteration_context.get(
+                                result.iteration, (result.parent_id, self.database.current_island)
+                            )
+                            parent_program = self.database.get(parent_id) if parent_id else None
+
+                            generator_input = {
+                                "code": parent_program.code if parent_program else "",
+                                "metrics": (parent_program.metrics if parent_program else {}),
+                            }
+                            generator_output = {
+                                "code": "",
+                                "llm_response": result.llm_response,
+                                "changes_summary": "",
+                            }
+                            validator_output = {"error": result.error, "artifacts": (result.artifacts or {})}
+
+                            entry = MemoryEntry(
+                                parent_program_id=parent_id or "",
+                                child_program_id=str(_uuid.uuid4()),  # no valid child program id
+                                generator_input=generator_input,
+                                generator_output=generator_output,
+                                validator_output=validator_output,
+                                diff_summary_user="",
+                                generator_prompt=result.prompt,
+                                iteration=result.iteration,
+                                metadata={"island": island_id, "status": "fail"},
+                            )
+                            memory_store.add(entry)
+                            logger.info(f"Memory: Added failure entry for iteration {result.iteration} (parent={parent_id}, error={result.error[:50]})")
+
+                            # Log to memory JSONL as well
+                            try:
+                                memory_log_path = getattr(self, "memory_log_path", None)
+                                if memory_log_path:
+                                    os.makedirs(os.path.dirname(memory_log_path), exist_ok=True)
+                                    log_record = {
+                                        "iteration": result.iteration,
+                                        "parent_id": parent_id,
+                                        "child_id": entry.child_program_id,
+                                        "island": island_id,
+                                        "generator_input": generator_input,
+                                        "generator_output": generator_output,
+                                        "validator_output": validator_output,
+                                        "generator_prompt": result.prompt,
+                                    }
+                                    with open(memory_log_path, "a", encoding="utf-8") as f:
+                                        f.write(json.dumps(log_record, ensure_ascii=False) + "\n")
+                                    pretty_path = memory_log_path.replace(".jsonl", "_pretty.json")
+                                    with open(pretty_path, "w", encoding="utf-8") as f:
+                                        json.dump(log_record, f, ensure_ascii=False, indent=2)
+                            except Exception:
+                                logger.error("Failed to write failure memory logs", exc_info=True)
+                    except Exception:
+                        logger.error("Memory add/logging failed for iteration error", exc_info=True)
                 elif result.child_program_dict:
                     # Reconstruct program from dict
                     child_program = Program(**result.child_program_dict)
@@ -485,7 +609,67 @@ class ProcessParallelController:
                     # Store artifacts
                     if result.artifacts:
                         self.database.store_artifacts(child_program.id, result.artifacts)
-                    
+
+                    # Add-only memory integration (non-blocking enrichment happens inside store)
+                    try:
+                        memory_store = getattr(self, "memory_store", None)
+                        if memory_store is not None:
+                            from memory.schemas import MemoryEntry
+                            parent_program = self.database.get(result.parent_id) if result.parent_id else None
+                            island_id = child_program.metadata.get("island", self.database.current_island)
+
+                            generator_input = {
+                                "code": parent_program.code if parent_program else "",
+                                "metrics": (parent_program.metrics if parent_program else {}),
+                            }
+                            generator_output = {
+                                "code": child_program.code,
+                                "llm_response": result.llm_response,
+                                "changes_summary": child_program.metadata.get("changes", ""),
+                            }
+                            validator_output = {**(child_program.metrics or {}), "artifacts": (result.artifacts or {})}
+
+                            entry = MemoryEntry(
+                                parent_program_id=result.parent_id or "",
+                                child_program_id=child_program.id,
+                                generator_input=generator_input,
+                                generator_output=generator_output,
+                                validator_output=validator_output,
+                                diff_summary_user=child_program.metadata.get("changes", ""),
+                                generator_prompt=result.prompt,
+                                iteration=completed_iteration,
+                                metadata={"island": island_id},
+                            )
+                            memory_store.add(entry)
+                            logger.info(f"Memory: Added entry for iteration {completed_iteration} (parent={result.parent_id}, child={child_program.id})")
+
+                            # Structured logging of what we added
+                            try:
+                                memory_log_path = getattr(self, "memory_log_path", None)
+                                if memory_log_path:
+                                    os.makedirs(os.path.dirname(memory_log_path), exist_ok=True)
+                                    log_record = {
+                                        "iteration": completed_iteration,
+                                        "parent_id": result.parent_id,
+                                        "child_id": child_program.id,
+                                        "island": island_id,
+                                        "generator_input": generator_input,
+                                        "generator_output": generator_output,
+                                        "validator_output": validator_output,
+                                        "generator_prompt": result.prompt,
+                                    }
+                                    with open(memory_log_path, "a", encoding="utf-8") as f:
+                                        f.write(json.dumps(log_record, ensure_ascii=False) + "\n")
+                                    # Also write a pretty single-file snapshot of the last record for quick viewing
+                                    pretty_path = memory_log_path.replace(".jsonl", "_pretty.json")
+                                    with open(pretty_path, "w", encoding="utf-8") as f:
+                                        json.dump(log_record, f, ensure_ascii=False, indent=2)
+                            except Exception:
+                                logger.error("Failed to write memory logs", exc_info=True)
+                    except Exception:
+                        # Never break evolution due to memory logging, but surface as error
+                        logger.error("Memory add/logging failed", exc_info=True)
+
                     # Log evolution trace
                     if self.evolution_tracer:
                         # Retrieve parent program for trace logging
@@ -658,10 +842,97 @@ class ProcessParallelController:
                 )
                 # Cancel the future to clean up the process
                 future.cancel()
+                # Log timeout to memory
+                try:
+                    memory_store = getattr(self, "memory_store", None)
+                    if memory_store is not None:
+                        from memory.schemas import MemoryEntry
+                        import uuid as _uuid
+                        parent_id, island_id = self.iteration_context.get(
+                            completed_iteration, (None, self.database.current_island)
+                        )
+                        parent_program = self.database.get(parent_id) if parent_id else None
+                        generator_input = {
+                            "code": parent_program.code if parent_program else "",
+                            "metrics": (parent_program.metrics if parent_program else {}),
+                        }
+                        validator_output = {"error": f"Iteration timeout after {timeout_seconds}s"}
+                        entry = MemoryEntry(
+                            parent_program_id=parent_id or "",
+                            child_program_id=str(_uuid.uuid4()),
+                            generator_input=generator_input,
+                            generator_output={"code": "", "llm_response": None, "changes_summary": ""},
+                            validator_output=validator_output,
+                            diff_summary_user="",
+                            generator_prompt=None,
+                            iteration=completed_iteration,
+                            metadata={"island": island_id, "status": "fail"},
+                        )
+                        memory_store.add(entry)
+                        logger.info(f"Memory: Added timeout entry for iteration {completed_iteration} (parent={parent_id})")
+
+                        # Also log to JSONL
+                        try:
+                            memory_log_path = getattr(self, "memory_log_path", None)
+                            if memory_log_path:
+                                os.makedirs(os.path.dirname(memory_log_path), exist_ok=True)
+                                log_record = {
+                                    "iteration": completed_iteration,
+                                    "parent_id": parent_id,
+                                    "child_id": entry.child_program_id,
+                                    "island": island_id,
+                                    "generator_input": generator_input,
+                                    "generator_output": {"code": "", "llm_response": None, "changes_summary": ""},
+                                    "validator_output": validator_output,
+                                    "generator_prompt": None,
+                                }
+                                with open(memory_log_path, "a", encoding="utf-8") as f:
+                                    f.write(json.dumps(log_record, ensure_ascii=False) + "\n")
+                                pretty_path = memory_log_path.replace(".jsonl", "_pretty.json")
+                                with open(pretty_path, "w", encoding="utf-8") as f:
+                                    json.dump(log_record, f, ensure_ascii=False, indent=2)
+                        except Exception:
+                            logger.error("Failed to write timeout memory logs", exc_info=True)
+                except Exception:
+                    logger.error("Memory add/logging failed for timeout", exc_info=True)
             except Exception as e:
                 logger.error(f"Error processing result from iteration {completed_iteration}: {e}")
+                # Log processing error to memory
+                try:
+                    memory_store = getattr(self, "memory_store", None)
+                    if memory_store is not None:
+                        from memory.schemas import MemoryEntry
+                        import uuid as _uuid
+                        parent_id, island_id = self.iteration_context.get(
+                            completed_iteration, (None, self.database.current_island)
+                        )
+                        parent_program = self.database.get(parent_id) if parent_id else None
+                        generator_input = {
+                            "code": parent_program.code if parent_program else "",
+                            "metrics": (parent_program.metrics if parent_program else {}),
+                        }
+                        validator_output = {"error": str(e)}
+                        entry = MemoryEntry(
+                            parent_program_id=parent_id or "",
+                            child_program_id=str(_uuid.uuid4()),
+                            generator_input=generator_input,
+                            generator_output={"code": "", "llm_response": None, "changes_summary": ""},
+                            validator_output=validator_output,
+                            diff_summary_user="",
+                            generator_prompt=None,
+                            iteration=completed_iteration,
+                            metadata={"island": island_id, "status": "fail"},
+                        )
+                        memory_store.add(entry)
+                        logger.info(f"Memory: Added processing exception entry for iteration {completed_iteration} (parent={parent_id})")
+                except Exception:
+                    logger.error("Memory add/logging failed for processing exception", exc_info=True)
 
             completed_iterations += 1
+
+            # Clean up iteration context to prevent memory leaks
+            if completed_iteration in self.iteration_context:
+                del self.iteration_context[completed_iteration]
 
             # Remove completed iteration from island tracking
             for island_id, iteration_list in island_pending.items():
@@ -714,9 +985,142 @@ class ProcessParallelController:
                 num_inspirations=self.config.prompt.num_top_programs
             )
 
+            # Prepare semantic search info in snapshot for worker-side logging
+            # Get semantic search topk from config (defaults to 3 if not available)
+            sem_topk = 3
+            try:
+                if hasattr(self.config, 'memory') and hasattr(self.config.memory, 'semantic_search_topk'):
+                    sem_topk = int(self.config.memory.semantic_search_topk)
+                else:
+                    # Fallback to environment variable for backward compatibility
+                    sem_topk = int(os.environ.get("MEMORY_SEMANTIC_TOPK", "3"))
+            except Exception:
+                sem_topk = 3
+            sem_parents = []
+            sem_results_count = 0
+            sem_details: List[Dict[str, Any]] = []
+            try:
+                memory_store = getattr(self, "memory_store", None)
+                if memory_store is not None and parent is not None and isinstance(parent.code, str) and parent.code:
+                    sem_results = memory_store.search_parents_by_code(parent.code, topk=sem_topk)
+                    sem_parents = [r.get("parent") for r in sem_results]
+                    sem_results_count = len(sem_results)
+                    logger.info(f"Memory: Found {sem_results_count} similar parent(s) for iteration {iteration} (parent={parent.id}, topk={sem_topk})")
+
+                    # Build detailed records: ids, codes, combined scores, and deltas
+                    for r in sem_results:
+                        try:
+                            pid = r.get("parent")
+                            cid = r.get("child")
+                            parent_prog = self.database.get(pid) if pid else None
+                            child_prog = self.database.get(cid) if cid else None
+                            p_code = (
+                                parent_prog.code
+                                if parent_prog is not None and isinstance(parent_prog.code, str)
+                                else (r.get("generator_input", {}).get("code") if isinstance(r.get("generator_input"), dict) else None)
+                            )
+                            c_code = (
+                                child_prog.code
+                                if child_prog is not None and isinstance(child_prog.code, str)
+                                else (r.get("generator_output", {}).get("code") if isinstance(r.get("generator_output"), dict) else None)
+                            )
+                            # Gather metrics dictionaries if available for richer prompt rendering
+                            parent_metrics_dict = None
+                            if parent_prog and isinstance(parent_prog.metrics, dict):
+                                parent_metrics_dict = parent_prog.metrics
+                            elif isinstance(r.get("generator_input"), dict) and isinstance(r.get("generator_input", {}).get("metrics"), dict):
+                                parent_metrics_dict = r.get("generator_input", {}).get("metrics")
+
+                            child_metrics_dict = None
+                            if child_prog and isinstance(child_prog.metrics, dict):
+                                child_metrics_dict = child_prog.metrics
+                            elif isinstance(r.get("validator_output"), dict):
+                                # validator_output may already be a metrics-like dict
+                                child_metrics_dict = r.get("validator_output")
+                            def _num(x):
+                                return float(x) if isinstance(x, (int, float)) else None
+                            p_comb = None
+                            if parent_prog and isinstance(parent_prog.metrics, dict):
+                                p_comb = parent_prog.metrics.get("combined_score")
+                            if p_comb is None and isinstance(r.get("generator_input"), dict):
+                                pm = r.get("generator_input", {}).get("metrics")
+                                if isinstance(pm, dict):
+                                    p_comb = pm.get("combined_score")
+                            c_comb = None
+                            if child_prog and isinstance(child_prog.metrics, dict):
+                                c_comb = child_prog.metrics.get("combined_score")
+                            if c_comb is None and isinstance(r.get("validator_output"), dict):
+                                c_comb = r.get("validator_output", {}).get("combined_score")
+                            # Fallbacks to numeric averages
+                            if c_comb is None and isinstance(r.get("validator_output"), dict):
+                                try:
+                                    nums = [v for v in r["validator_output"].values() if isinstance(v, (int, float))]
+                                    c_comb = (sum(nums) / len(nums)) if nums else None
+                                except Exception:
+                                    c_comb = None
+                            if p_comb is None and parent_prog and isinstance(parent_prog.metrics, dict):
+                                try:
+                                    nums = [v for v in parent_prog.metrics.values() if isinstance(v, (int, float))]
+                                    p_comb = (sum(nums) / len(nums)) if nums else None
+                                except Exception:
+                                    p_comb = None
+                            delta = None
+                            if isinstance(p_comb, (int, float)) and isinstance(c_comb, (int, float)):
+                                try:
+                                    delta = float(c_comb) - float(p_comb)
+                                except Exception:
+                                    delta = None
+                            # Try to surface a concise change summary for the child
+                            change_summary = None
+                            try:
+                                if child_prog and isinstance(child_prog.metadata, dict):
+                                    change_summary = child_prog.metadata.get("changes")
+                                if not change_summary and isinstance(r.get("generator_output"), dict):
+                                    change_summary = r.get("generator_output", {}).get("changes_summary")
+                                if not change_summary:
+                                    change_summary = r.get("diff_summary_user")
+                            except Exception:
+                                change_summary = None
+                            sem_details.append(
+                                {
+                                    "parent_id": pid,
+                                    "child_id": cid,
+                                    "parent_code": p_code,
+                                    "child_code": c_code,
+                                    "parent_metrics": parent_metrics_dict,
+                                    "child_metrics": child_metrics_dict,
+                                    "change_summary": change_summary,
+                                    "parent_combined_score": _num(p_comb),
+                                    "child_combined_score": _num(c_comb),
+                                    "delta_combined_score": _num(delta),
+                                }
+                            )
+                        except Exception:
+                            logger.error("Failed to build semantic parent detail record", exc_info=True)
+                else:
+                    logger.debug(f"Memory: No similar parent search (memory_store={memory_store is not None}, parent={parent.id if parent else None})")
+            except Exception:
+                logger.error("Semantic search call failed", exc_info=True)
+
+            # Save iteration context (parent and island) for robust failure logging
+            try:
+                self.iteration_context[iteration] = (parent.id if parent else None, target_island)
+            except Exception:
+                pass
+
             # Create database snapshot
             db_snapshot = self._create_database_snapshot()
             db_snapshot["sampling_island"] = target_island  # Mark which island this is for
+
+            # Only add semantic search data if memory is enabled
+            memory_store = getattr(self, "memory_store", None)
+            if memory_store is not None:
+                db_snapshot["semantic_parent_log"] = {
+                    "topk": sem_topk,
+                    "parents": sem_parents,
+                    "results_count": sem_results_count,
+                }
+                db_snapshot["semantic_parent_details"] = sem_details
 
             # Submit to process pool
             future = self.executor.submit(

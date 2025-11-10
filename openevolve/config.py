@@ -197,6 +197,11 @@ class PromptConfig:
     num_top_programs: int = 3
     num_diverse_programs: int = 2
 
+    # Memory-based examples (from semantic search)
+    num_similar_parent_best: int = 3  # Number of best improvements from similar parents to show
+    num_similar_parent_worst: int = 3  # Number of worst regressions from similar parents to show
+    include_similar_parent_worst: bool = True  # Whether to show negative examples
+
     # Template stochasticity
     use_template_stochasticity: bool = True
     template_variations: Dict[str, List[str]] = field(default_factory=dict)

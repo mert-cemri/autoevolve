@@ -18,6 +18,7 @@ from openevolve.search_strategies import (
     BestOfNStrategy,
     BeamSearchStrategy,
     MCTSStrategy,
+    MAPElitesStrategy,
 )
 from openevolve.strategy_parallel import StrategyParallelController
 
