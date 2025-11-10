@@ -1,0 +1,96 @@
+# Configuration for Best-of-N with Memory - Symbolic Regression
+# This config is used for all problems with the best-of-n strategy + memory enabled
+
+# Search strategy
+search_strategy: "best_of_n"
+n_lineages: 4  # Number of independent lineages (matches num_islands=4 for fair comparison)
+
+# Evolution settings
+max_iterations: 200  # 200 iterations, round-robin through lineages (200 evaluations)
+checkpoint_interval: 10
+log_level: "INFO"
+random_seed: 42
+target_score: "combined_score"
+
+# Memory Configuration
+# ENABLED: Memory-augmented evolution with semantic search
+memory:
+  enabled: true  # Memory is ENABLED for this config
+  load_from_snapshot: false  # Start fresh - no existing snapshot to load
+  semantic_search_topk: 3  # Number of similar parents to find for semantic search
+  embed_model: "text-embedding-3-large"  # OpenAI embedding model for semantic search
+
+# LLM configuration - matches problem configs
+llm:
+  primary_model: "gpt-4o"
+  primary_model_weight: 0.8
+  secondary_model: "o3"
+  secondary_model_weight: 0.2
+  api_base: "https://api.openai.com/v1"
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 8192
+  timeout: 300
+
+# Prompt configuration - generic for all symbolic regression problems
+prompt:
+  system_message: |
+    You are an expert in symbolic regression and mathematical modeling.
+    Your task is to evolve a Python function `func(x, params)` that models a scientific process,
+    predicting output variables based on input variables.
+
+    The function signature is:
+    ```python
+    def func(x: np.ndarray, params: np.ndarray) -> np.ndarray:
+    ```
+
+    - `x` is a 2D NumPy array of shape `(n_samples, n_features)` containing input variables
+    - `params` is a 1D NumPy array of up to 10 parameters (optimized externally via BFGS)
+    - The function should return a 1D NumPy array of predictions with shape `(n_samples,)`
+
+    Key principles:
+    - Aim for accurate predictions with low mean squared error (MSE)
+    - Prefer simple, interpretable mathematical expressions
+    - Consider the physical meaning and relationships of input variables
+    - Avoid numerical issues (division by zero, log of negative numbers, etc.)
+    - Balance model complexity with generalization ability
+
+    Performance metric: score = -log10(MSE)
+    Higher scores are better. The model will be evaluated on held-out test data.
+
+    Strategies to explore:
+    - Polynomial terms and interactions between variables
+    - Exponential, logarithmic, and trigonometric functions
+    - Physical laws and domain-specific relationships
+    - Feature engineering and transformations
+    - Regularization through simplicity
+  num_top_programs: 4
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Database configuration - matches problem configs
+database:
+  population_size: 70
+  archive_size: 30
+  elite_selection_ratio: 0.3
+  exploitation_ratio: 0.6
+  feature_dimensions: []  # No MAP-Elites features for best-of-n
+
+# Evaluator configuration - matches problem configs
+evaluator:
+  timeout: 90
+  cascade_evaluation: false
+  cascade_thresholds: [1.0]
+  parallel_evaluations: 4
+  use_llm_feedback: false
+  max_retries: 2
+
+# Evolution settings - matches problem configs
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 100000
+
+# Early stopping
+early_stopping_patience: 30
+early_stopping_metric: "combined_score"
+convergence_threshold: 0.01

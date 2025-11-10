@@ -384,6 +384,108 @@ class InMemoryMemoryStore(MemoryStore):
         return tags
 
     # Snapshot helper (for simple UI)
+    def search_parents_by_code(self, code: str, topk: int = 3) -> List[Dict[str, Any]]:
+        """
+        Search for similar parent programs by code using semantic similarity.
+        Falls back to recent programs if semantic search is not available.
+
+        Args:
+            code: The code to search for similar parents
+            topk: Number of top results to return
+
+        Returns:
+            List of dictionaries with parent/child info and metadata
+        """
+        try:
+            # Try semantic search with embeddings if OpenAI is available
+            api_key = os.environ.get("OPENAI_API_KEY")
+            embed_model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-large")
+
+            if api_key and code:
+                try:
+                    from openai import OpenAI
+                    import numpy as np
+                    import logging
+
+                    logger = logging.getLogger(__name__)
+
+                    # Increased timeout to 30s for embedding API calls
+                    client = OpenAI(api_key=api_key, timeout=30.0)
+
+                    # Get embedding for query code
+                    query_embedding = client.embeddings.create(
+                        input=[code[:8000]],  # Limit code length
+                        model=embed_model
+                    ).data[0].embedding
+
+                    # Compute similarity with all entries
+                    results = []
+                    with self._lock:
+                        for rid, rec in self._by_id.items():
+                            # Get parent code from generator_input
+                            parent_code = None
+                            if isinstance(rec.generator_input, dict):
+                                parent_code = rec.generator_input.get("code")
+                            elif isinstance(rec.generator_input, str):
+                                parent_code = rec.generator_input
+
+                            if not parent_code:
+                                continue
+
+                            # Get embedding for parent code (cache would be good here)
+                            try:
+                                parent_embedding = client.embeddings.create(
+                                    input=[parent_code[:8000]],
+                                    model=embed_model
+                                ).data[0].embedding
+
+                                # Compute cosine similarity
+                                similarity = np.dot(query_embedding, parent_embedding) / (
+                                    np.linalg.norm(query_embedding) * np.linalg.norm(parent_embedding)
+                                )
+
+                                results.append({
+                                    "parent": rec.parent_program_id,
+                                    "child": rec.child_program_id,
+                                    "generator_input": rec.generator_input,
+                                    "generator_output": rec.generator_output,
+                                    "validator_output": rec.validator_output,
+                                    "similarity": float(similarity),
+                                    "iteration": rec.iteration,
+                                })
+                            except Exception:
+                                continue
+
+                    # Sort by similarity and return top-k
+                    results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+                    logger.debug(f"Memory semantic search: Found {len(results)} similar programs (returning top {topk})")
+                    return results[:topk]
+
+                except Exception as e:
+                    # Log the error and fall back to simple search
+                    logger.warning(f"Memory semantic search failed (falling back to recent): {str(e)}")
+                    pass  # Fall back to simple search
+
+        except Exception as e:
+            # Outer exception handler
+            pass
+
+        # Fallback: return most recent entries
+        with self._lock:
+            recent = []
+            for rid, rec in self._by_id.items():
+                recent.append({
+                    "parent": rec.parent_program_id,
+                    "child": rec.child_program_id,
+                    "generator_input": rec.generator_input,
+                    "generator_output": rec.generator_output,
+                    "validator_output": rec.validator_output,
+                    "iteration": rec.iteration,
+                })
+            # Sort by iteration (most recent first)
+            recent.sort(key=lambda x: x.get("iteration", 0) or 0, reverse=True)
+            return recent[:topk]
+
     def _snapshot_write(self) -> None:
         try:
             if not self._snapshot_path:

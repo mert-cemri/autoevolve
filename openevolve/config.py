@@ -277,6 +277,12 @@ class DatabaseConfig:
     # Random seed for reproducible sampling
     random_seed: Optional[int] = 42
 
+    # Adaptive exploration/exploitation
+    use_adaptive_search: bool = False
+    adaptive_window_size: int = 10  # Number of recent iterations to track
+    adaptive_min_exploration: float = 0.1  # Minimum exploration ratio
+    adaptive_max_exploration: float = 0.7  # Maximum exploration ratio
+
     # Artifact storage
     artifacts_base_path: Optional[str] = None  # Defaults to db_path/artifacts
     artifact_size_threshold: int = 32 * 1024  # 32KB threshold
@@ -320,7 +326,7 @@ class EvaluatorConfig:
 @dataclass
 class EvolutionTraceConfig:
     """Configuration for evolution trace logging"""
-    
+
     enabled: bool = False
     format: str = "jsonl"  # Options: "jsonl", "json", "hdf5"
     include_code: bool = False
@@ -328,6 +334,17 @@ class EvolutionTraceConfig:
     output_path: Optional[str] = None
     buffer_size: int = 10
     compress: bool = False
+
+
+@dataclass
+class MemoryConfig:
+    """Configuration for memory store (semantic memory for evolution)"""
+
+    enabled: bool = False
+    snapshot_path: Optional[str] = None
+    load_from_snapshot: bool = False
+    embed_model: str = "text-embedding-3-small"
+    semantic_search_topk: int = 5
 
 
 @dataclass
@@ -349,6 +366,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
+    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -374,7 +392,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "memory"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -399,6 +417,8 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
+        if "memory" in config_dict:
+            config.memory = MemoryConfig(**config_dict["memory"])
 
         return config
 

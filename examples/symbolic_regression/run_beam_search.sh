@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Run Beam Search experiments for all symbolic regression problems
+# Uses config_beam_search.yaml with strategy-specific parameters
+
 # Define splits and their configurations
 # Format: "split_name:count:prefix"
 splits=(
@@ -10,8 +13,18 @@ splits=(
 )
 
 base_problems_dir="./problems"
+strategy_config="./config_beam_search.yaml"
 
-echo "Starting all experiments..."
+# Verify strategy config exists
+if [[ ! -f "$strategy_config" ]]; then
+    echo "Error: Strategy config not found at $strategy_config"
+    exit 1
+fi
+
+echo "Starting all Beam Search experiments..."
+echo "Using config: $strategy_config"
+echo "Strategy: Beam Search (beam_width=4, branch_factor=4, 200 iterations = 800 evaluations)"
+echo ""
 
 for split_config in "${splits[@]}"; do
     # Parse the configuration
@@ -19,7 +32,7 @@ for split_config in "${splits[@]}"; do
 
     echo ""
     echo "----------------------------------------------------"
-    echo "Processing Split: $split_name"
+    echo "Processing Split: $split_name (Beam Search)"
     echo "Number of problems: $count"
     echo "Problem directory prefix: '$problem_dir_prefix'"
     echo "Expected problem path structure: $base_problems_dir/$split_name/${problem_dir_prefix}[ID]/"
@@ -33,7 +46,6 @@ for split_config in "${splits[@]}"; do
 
         initial_program_path="$problem_dir/initial_program.py"
         evaluator_path="$problem_dir/evaluator.py"
-        config_path="$problem_dir/config.yaml"
 
         # --- Sanity checks for file existence ---
         if [[ ! -f "$initial_program_path" ]]; then
@@ -44,23 +56,19 @@ for split_config in "${splits[@]}"; do
             echo "  [Problem $i] SKIPPING: Evaluator not found at $evaluator_path"
             continue
         fi
-        if [[ ! -f "$config_path" ]]; then
-            echo "  [Problem $i] SKIPPING: Config file not found at $config_path"
-            continue
-        fi
         # --- End Sanity checks ---
 
-        echo "  Launching $split_name - Problem $i ($initial_program_path)"
-        # Run the experiment in the background
-        cmd="python ../../openevolve-run.py "$initial_program_path" "$evaluator_path" --config "$config_path" --iterations 200"
+        echo "  Launching $split_name - Problem $i ($initial_program_path) with Beam Search"
+        # Run the experiment in the background with beam search flag and config
+        cmd="python ../../openevolve-run.py \"$initial_program_path\" \"$evaluator_path\" --beam-search --config \"$strategy_config\" --iterations 200"
         eval $cmd &
     done
     wait    # let's do split by split
 done
 
 echo ""
-echo "All experiment processes have been launched in the background."
+echo "All Beam Search experiment processes have been launched in the background."
 echo "Waiting for all background processes to complete..."
 wait
 echo ""
-echo "All experiments have completed."
+echo "All Beam Search experiments have completed."

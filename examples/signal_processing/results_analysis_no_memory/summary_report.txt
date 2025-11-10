@@ -1,0 +1,57 @@
+================================================================================
+SIGNAL PROCESSING EXPERIMENTS - SUMMARY REPORT
+================================================================================
+
+1. FINAL RESULTS BY STRATEGY
+--------------------------------------------------------------------------------
+
+Rank 1: MAP-Elites
+  Combined Score: N/A (experiment not completed or failed)
+  Converged at Iteration: 62
+  Generation: 5
+
+Rank 2: Best-of-N
+  Combined Score: N/A (experiment not completed or failed)
+  Converged at Iteration: 9
+  Generation: 2
+
+Rank 3: Beam Search
+  Combined Score: N/A (experiment not completed or failed)
+  Converged at Iteration: 10
+  Generation: 2
+
+Rank 4: MCTS
+  Combined Score: N/A (experiment not completed or failed)
+  Converged at Iteration: 11
+  Generation: 2
+
+
+2. RAW METRICS BY STRATEGY
+--------------------------------------------------------------------------------
+
+MAP-Elites:
+  Slope Changes: 219.2000
+  Lag Error: 0.9028
+  False Reversals: 182.2000
+
+Best-of-N:
+  Slope Changes: 66.0000
+  Lag Error: 0.8697
+  False Reversals: 55.2000
+
+Beam Search:
+  Slope Changes: 388.2000
+  Lag Error: 0.6828
+  False Reversals: 319.4000
+
+MCTS:
+  Slope Changes: 299.6000
+  Lag Error: 0.7600
+  False Reversals: 246.2000
+
+
+3. BEST STRATEGY
+--------------------------------------------------------------------------------
+No valid results available (all experiments may have failed or not completed)
+
+================================================================================

@@ -506,6 +506,9 @@ class StrategyParallelController:
                                 memory_log_path = getattr(self, "memory_log_path", None)
                                 if memory_log_path:
                                     os.makedirs(os.path.dirname(memory_log_path), exist_ok=True)
+                                    # Extract island_id from parent program metadata (for MAP-Elites)
+                                    # Default to 0 for non-MAP-Elites strategies
+                                    island_id = parent_program.metadata.get("island", 0) if parent_program else 0
                                     log_record = {
                                         "iteration": completed_iteration,
                                         "parent_id": result.parent_id,

@@ -182,6 +182,20 @@ class ProgramDatabase:
                 dim: self.feature_bins for dim in config.feature_dimensions
             }
 
+        # Adaptive exploration/exploitation
+        self.use_adaptive_search = getattr(config, "use_adaptive_search", False)
+        if self.use_adaptive_search:
+            from collections import deque
+            self.adaptive_window_size = getattr(config, "adaptive_window_size", 10)
+            self.adaptive_min_exploration = getattr(config, "adaptive_min_exploration", 0.1)
+            self.adaptive_max_exploration = getattr(config, "adaptive_max_exploration", 0.7)
+            self.recent_improvements = deque(maxlen=self.adaptive_window_size)
+            self.best_fitness_score = None  # Track best fitness for improvement detection
+            logger.info(
+                f"Enabled adaptive search: window={self.adaptive_window_size}, "
+                f"exploration=[{self.adaptive_min_exploration}, {self.adaptive_max_exploration}]"
+            )
+
         logger.info(f"Initialized program database with {len(self.programs)} programs")
 
     def add(
@@ -318,6 +332,33 @@ class ProgramDatabase:
 
         # Update the absolute best program tracking (after population enforcement)
         self._update_best_program(program)
+
+        # Track improvements for adaptive search
+        if self.use_adaptive_search:
+            # Get current best fitness
+            if self.best_program_id and self.best_program_id in self.programs:
+                current_best_fitness = get_fitness_score(
+                    self.programs[self.best_program_id].metrics,
+                    self.config.feature_dimensions
+                )
+
+                # Check if we improved
+                if self.best_fitness_score is None:
+                    # First program
+                    improved = True
+                    self.best_fitness_score = current_best_fitness
+                elif current_best_fitness > self.best_fitness_score:
+                    # Score improved
+                    improved = True
+                    logger.debug(
+                        f"Adaptive: Fitness improved {self.best_fitness_score:.6f} → {current_best_fitness:.6f}"
+                    )
+                    self.best_fitness_score = current_best_fitness
+                else:
+                    # No improvement
+                    improved = False
+
+                self.recent_improvements.append(1 if improved else 0)
 
         # Update island-specific best program tracking
         self._update_island_best_program(program, island_idx)
@@ -614,6 +655,13 @@ class ProgramDatabase:
             "feature_stats": self._serialize_feature_stats(),
         }
 
+        # Save adaptive search state
+        if self.use_adaptive_search:
+            metadata["adaptive_search"] = {
+                "recent_improvements": list(self.recent_improvements),
+                "best_fitness_score": self.best_fitness_score,
+            }
+
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
             json.dump(metadata, f)
 
@@ -651,6 +699,19 @@ class ProgramDatabase:
 
             # Load feature_stats for MAP-Elites grid stability
             self.feature_stats = self._deserialize_feature_stats(metadata.get("feature_stats", {}))
+
+            # Load adaptive search state
+            if self.use_adaptive_search and "adaptive_search" in metadata:
+                from collections import deque
+                adaptive_data = metadata["adaptive_search"]
+                self.recent_improvements = deque(
+                    adaptive_data.get("recent_improvements", []),
+                    maxlen=self.adaptive_window_size
+                )
+                self.best_fitness_score = adaptive_data.get("best_fitness_score")
+                logger.info(
+                    f"Loaded adaptive search state: {len(self.recent_improvements)} recent improvements"
+                )
 
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
             if self.feature_stats:
@@ -1116,13 +1177,41 @@ class ProgramDatabase:
         Returns:
             Parent program from current island
         """
-        # Use exploration_ratio and exploitation_ratio to decide sampling strategy
+        # Get exploration ratio (adaptive or static)
+        if self.use_adaptive_search and len(self.recent_improvements) > 0:
+            # Calculate improvement rate
+            improvement_rate = sum(self.recent_improvements) / len(self.recent_improvements)
+
+            # Adaptive formula: more improvements → less exploration
+            exploration_ratio = (
+                self.adaptive_max_exploration -
+                (self.adaptive_max_exploration - self.adaptive_min_exploration) * improvement_rate
+            )
+
+            # Log occasionally for visibility
+            if random.random() < 0.01:  # 1% of samples
+                logger.debug(
+                    f"Adaptive: improvement_rate={improvement_rate:.2f}, "
+                    f"exploration_ratio={exploration_ratio:.2f}"
+                )
+        else:
+            # Use static ratio from config
+            exploration_ratio = self.config.exploration_ratio
+
+        # Random ratio is fixed at 10%
+        random_ratio = 0.1
+
+        # Exploitation gets the remainder
+        exploitation_ratio = 1.0 - exploration_ratio - random_ratio
+        exploitation_ratio = max(0.0, exploitation_ratio)  # Ensure non-negative
+
+        # Use ratios to decide sampling strategy
         rand_val = random.random()
 
-        if rand_val < self.config.exploration_ratio:
+        if rand_val < exploration_ratio:
             # EXPLORATION: Sample from current island (diverse sampling)
             return self._sample_exploration_parent()
-        elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
+        elif rand_val < exploration_ratio + exploitation_ratio:
             # EXPLOITATION: Sample from archive (elite programs)
             return self._sample_exploitation_parent()
         else:

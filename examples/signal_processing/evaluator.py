@@ -89,9 +89,16 @@ def calculate_lag_error(filtered_signal, original_signal, window_size):
     if len(original_signal) <= delay:
         return 1.0
 
+    # Calculate the index in original signal, with bounds checking
+    original_idx = delay + len(filtered_signal) - 1
+
+    # If filtered signal is too long, penalize heavily
+    if original_idx >= len(original_signal):
+        return 1.0  # Maximum penalty for out-of-bounds
+
     # Compare the last filtered sample with the corresponding original sample
     recent_filtered = filtered_signal[-1]
-    recent_original = original_signal[delay + len(filtered_signal) - 1]
+    recent_original = original_signal[original_idx]
 
     return abs(recent_filtered - recent_original)
 
@@ -322,8 +329,21 @@ def evaluate(program_path):
                 # Convert to numpy arrays
                 filtered_signal = np.array(filtered_signal)
 
-                # Calculate metrics using the generated test signal
+                # Validate output length
+                # Expected length: len(input) - window_size + 1
                 window_size = 20
+                expected_length = len(noisy_signal) - window_size + 1
+                max_acceptable_length = len(noisy_signal)  # Absolute maximum
+
+                if len(filtered_signal) > max_acceptable_length:
+                    print(
+                        f"Signal {i}: Error - filtered signal too long "
+                        f"({len(filtered_signal)} > {max_acceptable_length}). "
+                        f"Expected ~{expected_length}"
+                    )
+                    continue
+
+                # Calculate metrics using the generated test signal
 
                 # Calculate all penalty components
                 S = calculate_slope_changes(filtered_signal)

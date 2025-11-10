@@ -1,7 +1,16 @@
 # Configuration for Real-Time Adaptive Signal Processing Example
+# MAP-Elites with Memory enabled
+
 max_iterations: 100
 checkpoint_interval: 10
 log_level: "INFO"
+
+# Memory Configuration
+memory:
+  enabled: true  # Enable memory-augmented evolution
+  load_from_snapshot: false  # Start fresh - no existing snapshot to load
+  semantic_search_topk: 3  # Number of similar parents to find for semantic search
+  embed_model: "text-embedding-3-large"  # OpenAI embedding model for semantic search
 
 # LLM configuration
 llm:
@@ -13,7 +22,7 @@ llm:
   temperature: 0.6
   top_p: 0.95
   max_tokens: 32000
-  timeout: 180  # Increased timeout for LLM API calls
+  timeout: 180  # Increased timeout for memory-enabled runs with embeddings
 
 # Prompt configuration
 prompt:

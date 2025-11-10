@@ -1,7 +1,23 @@
-# Configuration for Real-Time Adaptive Signal Processing Example
-max_iterations: 100
-checkpoint_interval: 10
+# Configuration for Beam Search Strategy - Real-Time Adaptive Signal Processing
+# Beam Search with Memory enabled
+# Resource usage: 25 iterations × (beam_width=4 × branch_factor=1) = ~100 LLM calls
+
+# Search strategy
+search_strategy: "beam_search"
+beam_width: 4          # Keep top M programs (maintains diversity)
+branch_factor: 1       # Generate N candidates per beam member per iteration
+
+# Evolution settings
+max_iterations: 100     # Adjusted for comparable LLM usage (~100 calls)
+checkpoint_interval: 5
 log_level: "INFO"
+
+# Memory Configuration
+memory:
+  enabled: true  # Enable memory-augmented evolution
+  load_from_snapshot: false  # Start fresh - no existing snapshot to load
+  semantic_search_topk: 3  # Number of similar parents to find for semantic search
+  embed_model: "text-embedding-3-large"  # OpenAI embedding model for semantic search
 
 # LLM configuration
 llm:
@@ -13,21 +29,22 @@ llm:
   temperature: 0.6
   top_p: 0.95
   max_tokens: 32000
-  timeout: 180  # Increased timeout for LLM API calls
+  timeout: 180  # Increased timeout for memory-enabled runs with embeddings
 
 # Prompt configuration
 prompt:
   system_message: "You are an expert signal processing engineer specializing in real-time adaptive filtering algorithms. Your task is to improve a signal processing algorithm that filters volatile, non-stationary time series data using a sliding window approach. The algorithm must minimize noise while preserving signal dynamics with minimal computational latency and phase delay. Focus on the multi-objective optimization of: (1) Slope change minimization - reducing spurious directional reversals, (2) Lag error minimization - maintaining responsiveness, (3) Tracking accuracy - preserving genuine signal trends, and (4) False reversal penalty - avoiding noise-induced trend changes. Consider advanced techniques like adaptive filtering (Kalman filters, particle filters), multi-scale processing (wavelets, EMD), predictive enhancement (polynomial fitting, neural networks), and trend detection methods."
-  num_top_programs: 3
+  num_top_programs: 4
+  num_diverse_programs: 2
   use_template_stochasticity: true
 
 # Database configuration
 database:
   population_size: 80
   archive_size: 30
-  num_islands: 4
   elite_selection_ratio: 0.15
   exploitation_ratio: 0.65
+  feature_dimensions: []  # No MAP-Elites features for beam search
 
 # Evaluator configuration
 evaluator:

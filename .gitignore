@@ -4,6 +4,11 @@ examples/lm_eval/prompts/evaluator_system_message.txt
 examples/math_mas/USAGE.txt
 examples/math_mas/CONFIGURATION_GUIDE.md
 examples/circle_packing/EXPERIMENTS.md
+examples/symbolic_regression/ANALYSIS_README.md
+ADAPTIVE_IMPLEMENTATION.md
+ADAPTIVE_SEARCH_DESIGN.md
+RUN_ADAPTIVE_EXPERIMENTS.md
+SIMPLE_ADAPTIVE.md
 # Python
 __pycache__/
 *.py[cod]
