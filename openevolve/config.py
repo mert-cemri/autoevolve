@@ -288,6 +288,9 @@ class DatabaseConfig:
     adaptive_min_exploration: float = 0.1  # Minimum exploration ratio
     adaptive_max_exploration: float = 0.7  # Maximum exploration ratio
 
+    # Gradient-based parent selection (overrides adaptive if enabled)
+    use_gradient_selection: bool = False  # Use gradient scores for parent selection
+
     # Artifact storage
     artifacts_base_path: Optional[str] = None  # Defaults to db_path/artifacts
     artifact_size_threshold: int = 32 * 1024  # 32KB threshold

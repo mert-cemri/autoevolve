@@ -33,6 +33,10 @@ class MemoryEntry:
     sampling: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
+    # Gradient evolution fields (for gradient-based parent selection and memory retrieval)
+    distance: Optional[float] = None  # Semantic distance: 1 - similarity(parent, child)
+    gradient: Optional[float] = None  # Normalized improvement: delta_score / distance
+
     # System-managed identifiers and timestamps
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: float = field(default_factory=lambda: time.time())

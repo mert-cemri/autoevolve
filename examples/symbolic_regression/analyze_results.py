@@ -47,10 +47,10 @@ def find_best_program_info(
     # Special case: 'openevolve' is the default MAP-Elites strategy
     # Path: openevolve_output/best/best_program_info.json (no strategy subfolder)
     if strategy == "openevolve":
-        info_file = problem_dir / "openevolve_output_adaptive_memory" / "best" / "best_program_info.json"
+        info_file = problem_dir / "openevolve_output_gradient" / "best" / "best_program_info.json"
     else:
         # Other strategies: openevolve_output/{strategy}/best/best_program_info.json
-        info_file = problem_dir / "openevolve_output_adaptive_memory" / strategy / "best" / "best_program_info.json"
+        info_file = problem_dir / "openevolve_output_gradient" / strategy / "best" / "best_program_info.json"
 
     if info_file.exists():
         return info_file

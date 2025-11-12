@@ -290,6 +290,11 @@ class PromptSampler:
             "to your current program. These examples show similar PROBLEM STRUCTURES, not solutions to copy."
         )
         lines.append("")
+        lines.append("**GRADIENT INTERPRETATION:** Examples are ranked by their **gradient** = improvement / code distance. "
+                     "High gradient means large improvement from small, focused changes (very efficient). "
+                     "Low gradient means small improvement from large changes (inefficient). "
+                     "Focus on learning from high-gradient examples.")
+        lines.append("")
         lines.append("**INTENTION:** Use these examples to:")
         lines.append("- **LEARN STRATEGIC PATTERNS** from best examples (e.g., 'hexagonal layouts worked well', "
                      "'iterative refinement helped') - extract the STRATEGY, not the specific code")
@@ -329,8 +334,27 @@ class PromptSampler:
             parent_metrics = rec.get("parent_metrics") if isinstance(rec.get("parent_metrics"), dict) else {}
             child_metrics = rec.get("child_metrics") if isinstance(rec.get("child_metrics"), dict) else {}
 
+            # Extract gradient and distance for gradient-based evolution
+            gradient = rec.get("gradient")
+            distance = rec.get("distance")
+
             # Build a concise header; include IDs if available
             header = f"### Example {idx}: Δ={delta:+.4f} (parent={p_comb} → child={c_comb})"
+
+            # Add gradient information if available
+            if gradient is not None:
+                # Determine efficiency label based on gradient magnitude
+                if abs(gradient) > 1.0:
+                    efficiency = "very efficient"
+                elif abs(gradient) > 0.3:
+                    efficiency = "moderately efficient"
+                else:
+                    efficiency = "inefficient"
+
+                header += f" | Gradient={gradient:+.3f} ({efficiency})"
+                if distance is not None:
+                    header += f" | Distance={distance:.3f}"
+
             if pid or cid:
                 header += f" | parent={pid} → child={cid}"
 

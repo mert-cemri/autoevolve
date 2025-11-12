@@ -65,12 +65,23 @@ class Program:
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+    # Gradient tracking for parent selection
+    visit_count: int = 0  # Times selected as parent for mutation
+    total_gradient: float = 0.0  # Sum of gradients from children (ΔS / distance)
+
     # Prompts
     prompts: Optional[Dict[str, Any]] = None
 
     # Artifact storage
     artifacts_json: Optional[str] = None  # JSON-serialized small artifacts
     artifact_dir: Optional[str] = None  # Path to large artifact files
+
+    @property
+    def avg_gradient(self) -> Optional[float]:
+        """Average gradient from past mutations. None if never visited."""
+        if self.visit_count == 0:
+            return None
+        return self.total_gradient / self.visit_count
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
@@ -1212,8 +1223,13 @@ class ProgramDatabase:
             # EXPLORATION: Sample from current island (diverse sampling)
             return self._sample_exploration_parent()
         elif rand_val < exploration_ratio + exploitation_ratio:
-            # EXPLOITATION: Sample from archive (elite programs)
-            return self._sample_exploitation_parent()
+            # EXPLOITATION: Use gradient-based or archive-based selection
+            if self.config.use_gradient_selection:
+                # Gradient-based: select by max(avg_gradient)
+                return self._sample_gradient_parent()
+            else:
+                # Traditional: sample from archive (elite programs)
+                return self._sample_exploitation_parent()
         else:
             # RANDOM: Sample from any program (remaining probability)
             return self._sample_random_parent()
@@ -1352,6 +1368,50 @@ class ProgramDatabase:
         # Sample randomly from all programs
         program_id = random.choice(list(self.programs.keys()))
         return self.programs[program_id]
+
+    def _sample_gradient_parent(self) -> Program:
+        """
+        Sample parent using gradient-based selection.
+
+        Selects the program with the highest average gradient (improvement per unit change).
+        Unvisited programs (visit_count == 0) get infinite priority to ensure exploration.
+
+        This implements gradient ascent in program space, automatically balancing
+        exploration (unvisited) and exploitation (high gradient).
+
+        Returns:
+            Program with highest expected gradient
+        """
+        if not self.programs:
+            raise ValueError("No programs available for sampling")
+
+        def gradient_score(program: Program) -> float:
+            """Compute gradient score for parent selection."""
+            # Unvisited programs get infinite priority (forced exploration)
+            if program.visit_count == 0:
+                return float('inf')
+
+            # Otherwise use average gradient from past mutations
+            # This is delta_score / distance, averaged over all children
+            return program.avg_gradient or 0.0
+
+        # Select program with highest gradient score
+        best_program = max(self.programs.values(), key=gradient_score)
+
+        # Log occasionally for visibility
+        if random.random() < 0.05:  # 5% of samples
+            if best_program.visit_count == 0:
+                logger.debug(
+                    f"Gradient selection: Exploring unvisited program {best_program.id}"
+                )
+            else:
+                logger.debug(
+                    f"Gradient selection: Selected program {best_program.id} "
+                    f"(avg_gradient={best_program.avg_gradient:.3f}, "
+                    f"visit_count={best_program.visit_count})"
+                )
+
+        return best_program
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
         """

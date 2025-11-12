@@ -629,6 +629,33 @@ class ProcessParallelController:
                             }
                             validator_output = {**(child_program.metrics or {}), "artifacts": (result.artifacts or {})}
 
+                            # Compute distance and gradient for gradient-based evolution
+                            distance = None
+                            gradient = None
+                            if parent_program and hasattr(memory_store, 'compute_code_distance'):
+                                try:
+                                    # Compute semantic distance between parent and child
+                                    distance = memory_store.compute_code_distance(
+                                        parent_program.code, child_program.code
+                                    )
+
+                                    if distance is not None:
+                                        # Compute delta score (child - parent)
+                                        parent_score = parent_program.metrics.get("combined_score") if parent_program.metrics else None
+                                        child_score = child_program.metrics.get("combined_score") if child_program.metrics else None
+
+                                        if parent_score is not None and child_score is not None:
+                                            delta = float(child_score) - float(parent_score)
+                                            # Gradient = delta / distance (avoid division by zero)
+                                            gradient = delta / max(distance, 0.01)
+
+                                            # Update parent's gradient statistics
+                                            parent_program.visit_count += 1
+                                            parent_program.total_gradient += gradient
+                                except Exception:
+                                    # Non-blocking: gradient computation is optional
+                                    pass
+
                             entry = MemoryEntry(
                                 parent_program_id=result.parent_id or "",
                                 child_program_id=child_program.id,
@@ -639,6 +666,8 @@ class ProcessParallelController:
                                 generator_prompt=result.prompt,
                                 iteration=completed_iteration,
                                 metadata={"island": island_id},
+                                distance=distance,
+                                gradient=gradient,
                             )
                             memory_store.add(entry)
                             logger.info(f"Memory: Added entry for iteration {completed_iteration} (parent={result.parent_id}, child={child_program.id})")
@@ -657,6 +686,8 @@ class ProcessParallelController:
                                         "generator_output": generator_output,
                                         "validator_output": validator_output,
                                         "generator_prompt": result.prompt,
+                                        "distance": distance,
+                                        "gradient": gradient,
                                     }
                                     with open(memory_log_path, "a", encoding="utf-8") as f:
                                         f.write(json.dumps(log_record, ensure_ascii=False) + "\n")
@@ -1002,7 +1033,43 @@ class ProcessParallelController:
             try:
                 memory_store = getattr(self, "memory_store", None)
                 if memory_store is not None and parent is not None and isinstance(parent.code, str) and parent.code:
-                    sem_results = memory_store.search_parents_by_code(parent.code, topk=sem_topk)
+                    # Get more candidates for gradient-based filtering
+                    initial_topk = max(20, sem_topk * 3)
+                    sem_results_raw = memory_store.search_parents_by_code(parent.code, topk=initial_topk)
+
+                    # Apply gradient-based scoring: info_score = similarity × |gradient|
+                    for r in sem_results_raw:
+                        similarity = r.get("similarity", 0.0)
+                        gradient = r.get("gradient")
+
+                        # If gradient is not available, compute it from delta/distance if possible
+                        if gradient is None:
+                            distance = r.get("distance")
+                            # Try to compute delta from validator output
+                            if distance is not None and distance > 0:
+                                try:
+                                    validator = r.get("validator_output", {})
+                                    generator_input = r.get("generator_input", {})
+                                    if isinstance(validator, dict) and isinstance(generator_input, dict):
+                                        child_score = validator.get("combined_score")
+                                        parent_score = generator_input.get("metrics", {}).get("combined_score")
+                                        if child_score is not None and parent_score is not None:
+                                            delta = float(child_score) - float(parent_score)
+                                            gradient = delta / max(distance, 0.01)
+                                except Exception:
+                                    pass
+
+                        # Compute information score (default to similarity if no gradient)
+                        if gradient is not None:
+                            r["info_score"] = similarity * abs(gradient)
+                        else:
+                            # Fallback: use similarity alone if gradient not available
+                            r["info_score"] = similarity
+
+                    # Sort by info_score (highest first) and take top-k
+                    sem_results_raw.sort(key=lambda x: x.get("info_score", 0), reverse=True)
+                    sem_results = sem_results_raw[:sem_topk]
+
                     sem_parents = [r.get("parent") for r in sem_results]
                     sem_results_count = len(sem_results)
                     logger.info(f"Memory: Found {sem_results_count} similar parent(s) for iteration {iteration} (parent={parent.id}, topk={sem_topk})")
@@ -1093,6 +1160,8 @@ class ProcessParallelController:
                                     "parent_combined_score": _num(p_comb),
                                     "child_combined_score": _num(c_comb),
                                     "delta_combined_score": _num(delta),
+                                    "gradient": r.get("gradient"),
+                                    "distance": r.get("distance"),
                                 }
                             )
                         except Exception:

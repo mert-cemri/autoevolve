@@ -383,6 +383,60 @@ class InMemoryMemoryStore(MemoryStore):
             return tags
         return tags
 
+    def compute_code_distance(self, code1: str, code2: str) -> Optional[float]:
+        """
+        Compute semantic distance between two code snippets using embeddings.
+
+        Distance = 1 - cosine_similarity(embed(code1), embed(code2))
+        Returns None if embedding API is not available.
+
+        Args:
+            code1: First code snippet
+            code2: Second code snippet
+
+        Returns:
+            Distance in [0, 1] where 0 = identical, 1 = completely different
+            None if computation fails
+        """
+        try:
+            api_key = os.environ.get("OPENAI_API_KEY")
+            embed_model = os.environ.get("OPENAI_EMBED_MODEL", "text-embedding-3-large")
+
+            if not api_key or not code1 or not code2:
+                return None
+
+            try:
+                from openai import OpenAI
+                import numpy as np
+
+                client = OpenAI(api_key=api_key, timeout=30.0)
+
+                # Get embeddings for both codes
+                emb1 = client.embeddings.create(
+                    input=[code1[:8000]],
+                    model=embed_model
+                ).data[0].embedding
+
+                emb2 = client.embeddings.create(
+                    input=[code2[:8000]],
+                    model=embed_model
+                ).data[0].embedding
+
+                # Compute cosine similarity
+                similarity = np.dot(emb1, emb2) / (
+                    np.linalg.norm(emb1) * np.linalg.norm(emb2)
+                )
+
+                # Distance = 1 - similarity
+                # Clamp to [0, 1] to handle numerical errors
+                distance = max(0.0, min(1.0, 1.0 - float(similarity)))
+
+                return distance
+            except Exception:
+                return None
+        except Exception:
+            return None
+
     # Snapshot helper (for simple UI)
     def search_parents_by_code(self, code: str, topk: int = 3) -> List[Dict[str, Any]]:
         """
@@ -452,6 +506,9 @@ class InMemoryMemoryStore(MemoryStore):
                                     "validator_output": rec.validator_output,
                                     "similarity": float(similarity),
                                     "iteration": rec.iteration,
+                                    "distance": rec.distance,
+                                    "gradient": rec.gradient,
+                                    "diff_summary_user": rec.diff_summary_user,
                                 })
                             except Exception:
                                 continue
