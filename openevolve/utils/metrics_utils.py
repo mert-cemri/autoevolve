@@ -85,10 +85,16 @@ def get_fitness_score(
     if not metrics:
         return 0.0
 
-    # Always prefer combined_score if available
+    # Always prefer combined_score or composite_score if available
     if "combined_score" in metrics:
         try:
             return float(metrics["combined_score"])
+        except (ValueError, TypeError):
+            pass
+
+    if "composite_score" in metrics:
+        try:
+            return float(metrics["composite_score"])
         except (ValueError, TypeError):
             pass
 

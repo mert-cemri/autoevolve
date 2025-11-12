@@ -5,6 +5,10 @@
 
 set -e  # Exit on error
 
+# Generate timestamp for unique output directory
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR="openevolve_output_gradient_${TIMESTAMP}"
+
 echo "=========================================="
 echo "OpenEvolve - Signal Processing"
 echo "Gradient-Based Evolution"
@@ -17,6 +21,7 @@ echo "Memory: Semantic search with gradient scoring"
 echo "Retrieval: info_score = similarity × |gradient|"
 echo "Iterations: 100"
 echo "Models: gpt-5-mini (80%) + gpt-5-nano (20%)"
+echo "Output: $OUTPUT_DIR"
 echo "=========================================="
 echo ""
 echo "Requirements:"
@@ -27,22 +32,22 @@ python ../../openevolve-run.py \
   initial_program.py \
   evaluator.py \
   --config config_gradient.yaml \
-  --output openevolve_output_gradient \
+  --output "$OUTPUT_DIR" \
   --iterations 100
 
 echo ""
 echo "=========================================="
 echo "Gradient-based run complete!"
-echo "Results saved in: openevolve_output_gradient/"
+echo "Results saved in: $OUTPUT_DIR/"
 echo "=========================================="
 echo ""
 echo "To analyze gradient evolution:"
 echo "  # View parent selection decisions"
-echo "  grep 'Gradient selection' openevolve_output_gradient/evolution.log | tail -20"
+echo "  grep 'Gradient selection' $OUTPUT_DIR/logs/*.log | tail -20"
 echo ""
 echo "  # View memory retrieval with gradients"
-echo "  grep 'info_score' openevolve_output_gradient/memory/memory_log.jsonl | tail -10"
+echo "  grep 'info_score' $OUTPUT_DIR/memory_add_log.jsonl | tail -10"
 echo ""
-echo "  # Check gradient statistics"
-echo "  python -c 'import json; logs = [json.loads(l) for l in open(\"openevolve_output_gradient/memory/memory_log.jsonl\")]; print(f\"Avg gradient: {sum(l.get(\"gradient\", 0) or 0 for l in logs)/len(logs):.3f}\")'"
+echo "  # View best program"
+echo "  cat $OUTPUT_DIR/best/best_program.py"
 echo ""

@@ -9,6 +9,10 @@ set -e  # Exit on error
 PROBLEM_DIR=${1:-"problems/chem_react/CRK0"}
 ITERATIONS=${2:-200}
 
+# Generate timestamp for unique output directory
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR="openevolve_output_gradient_${TIMESTAMP}"
+
 if [[ ! -d "$PROBLEM_DIR" ]]; then
     echo "ERROR: Problem directory '$PROBLEM_DIR' not found"
     echo ""
@@ -47,6 +51,7 @@ echo "- Zero manual thresholds"
 echo "Memory: Semantic search with gradient scoring"
 echo "Retrieval: info_score = similarity × |gradient|"
 echo "Iterations: $ITERATIONS"
+echo "Output: $PROBLEM_DIR/$OUTPUT_DIR"
 echo "=========================================="
 echo ""
 echo "Requirements:"
@@ -58,22 +63,22 @@ python ../../openevolve-run.py \
   "$PROBLEM_DIR/initial_program.py" \
   "$PROBLEM_DIR/evaluator.py" \
   --config config_gradient.yaml \
-  --output "$PROBLEM_DIR/openevolve_output_gradient" \
+  --output "$PROBLEM_DIR/$OUTPUT_DIR" \
   --iterations $ITERATIONS
 
 echo ""
 echo "=========================================="
 echo "Gradient-based run complete!"
-echo "Results saved in: $PROBLEM_DIR/openevolve_output_gradient/"
+echo "Results saved in: $PROBLEM_DIR/$OUTPUT_DIR/"
 echo "=========================================="
 echo ""
 echo "To analyze gradient evolution:"
 echo "  # View parent selection decisions"
-echo "  grep 'Gradient selection' $PROBLEM_DIR/openevolve_output_gradient/evolution.log | tail -20"
+echo "  grep 'Gradient selection' $PROBLEM_DIR/$OUTPUT_DIR/logs/*.log | tail -20"
 echo ""
 echo "  # View memory retrieval with gradients"
-echo "  grep 'info_score' $PROBLEM_DIR/openevolve_output_gradient/memory/memory_log.jsonl | tail -10"
+echo "  grep 'info_score' $PROBLEM_DIR/$OUTPUT_DIR/memory_add_log.jsonl | tail -10"
 echo ""
 echo "  # View best program"
-echo "  cat $PROBLEM_DIR/openevolve_output_gradient/best/best_program.py"
+echo "  cat $PROBLEM_DIR/$OUTPUT_DIR/best/best_program.py"
 echo ""

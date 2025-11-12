@@ -111,6 +111,12 @@ class SearchStrategy(ABC):
         if not program.metrics:
             return False
 
+        # Get new program fitness
+        new_fitness = get_fitness_score(
+            program.metrics,
+            getattr(self.config, 'feature_dimensions', [])
+        )
+
         # Get current best fitness
         current_best_fitness = None
         if self.best_program_id and self.best_program_id in self.programs:
@@ -119,12 +125,26 @@ class SearchStrategy(ABC):
                 current_best.metrics,
                 getattr(self.config, 'feature_dimensions', [])
             )
-
-        # Get new program fitness
-        new_fitness = get_fitness_score(
-            program.metrics,
-            getattr(self.config, 'feature_dimensions', [])
-        )
+        elif self.best_program_id:
+            # Best program is missing - find actual best from remaining programs
+            logger.warning(f"Best program {self.best_program_id} no longer in programs")
+            if self.programs:
+                all_programs = list(self.programs.values())
+                actual_best = max(
+                    all_programs,
+                    key=lambda p: get_fitness_score(
+                        p.metrics,
+                        getattr(self.config, 'feature_dimensions', [])
+                    ) if p.metrics else -float('inf')
+                )
+                current_best_fitness = get_fitness_score(
+                    actual_best.metrics,
+                    getattr(self.config, 'feature_dimensions', [])
+                )
+                # Update best_program_id to point to actual best if new program isn't better
+                if new_fitness <= current_best_fitness:
+                    self.best_program_id = actual_best.id
+                    logger.info(f"Restored best program to {actual_best.id} (actual best in population)")
 
         # Update if better or first program
         if current_best_fitness is None or new_fitness > current_best_fitness:

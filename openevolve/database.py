@@ -1105,10 +1105,26 @@ class ProgramDatabase:
         # Compare with current best program (if it still exists)
         if self.best_program_id not in self.programs:
             logger.warning(
-                f"Best program {self.best_program_id} no longer exists, clearing reference"
+                f"Best program {self.best_program_id} no longer exists in database"
             )
-            self.best_program_id = program.id
-            logger.info(f"Set new best program to {program.id}")
+            # Find the actual best program from remaining population
+            if self.programs:
+                all_programs = list(self.programs.values())
+                current_best = max(
+                    all_programs,
+                    key=lambda p: get_fitness_score(p.metrics, self.config.feature_dimensions)
+                )
+                # Compare new program with actual best
+                if self._is_better(program, current_best):
+                    self.best_program_id = program.id
+                    logger.info(f"Set new best program to {program.id}")
+                else:
+                    self.best_program_id = current_best.id
+                    logger.info(f"Restored best program to {current_best.id} (actual best in population)")
+            else:
+                # No programs in database, use new one
+                self.best_program_id = program.id
+                logger.info(f"Set new best program to {program.id} (empty population)")
             return
 
         current_best = self.programs[self.best_program_id]
