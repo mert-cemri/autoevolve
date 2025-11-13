@@ -199,6 +199,8 @@ class OpenEvolve:
         """Set up logging"""
         log_dir = self.config.log_dir or os.path.join(self.output_dir, "logs")
         os.makedirs(log_dir, exist_ok=True)
+        # Ensure resolved log_dir is propagated to workers via config serialization
+        self.config.log_dir = log_dir
 
         # Set up root logger
         root_logger = logging.getLogger()

@@ -148,6 +148,18 @@ class PromptSampler:
             **kwargs,
         )
 
+        # Append a minimal, structured output footer to capture LLM intent and code in a stable way.
+        output_footer = (
+            "\n\n"
+            "Output format (strict):\n"
+            "PLAN: {\"action\": \"<very brief plan>\", \"rationale\": \"<why this should improve>\"}\n"
+            "CODE:\n"
+            "```python\n"
+            "<your complete program/code here>\n"
+            "```\n"
+        )
+        user_message = f"{user_message}{output_footer}"
+
         return {
             "system": system_message,
             "user": user_message,

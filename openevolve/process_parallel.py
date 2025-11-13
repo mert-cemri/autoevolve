@@ -10,6 +10,8 @@ import signal
 import time
 from concurrent.futures import ProcessPoolExecutor, Future, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, asdict
+import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -199,6 +201,24 @@ def _run_iteration_worker(
         if llm_response is None:
             return SerializableResult(error="LLM returned None response", iteration=iteration)
 
+        # Extract optional PLAN line (single-line JSON) if present
+        def _extract_plan(text: str):
+            try:
+                for line in text.splitlines():
+                    s = line.strip()
+                    if s.startswith("PLAN:"):
+                        payload = s[len("PLAN:"):].strip()
+                        if payload:
+                            try:
+                                return json.loads(payload)
+                            except Exception:
+                                return {"raw": payload}
+                return None
+            except Exception:
+                return None
+
+        llm_plan = _extract_plan(llm_response)
+
         # Parse response based on evolution mode
         if _worker_config.diff_based_evolution:
             from openevolve.utils.code_utils import extract_diffs, apply_diff, format_diff_summary
@@ -252,10 +272,51 @@ def _run_iteration_worker(
                 "changes": changes_summary,
                 "parent_metrics": parent.metrics,
                 "island": parent_island,
+                "llm_plan": llm_plan if llm_plan is not None else {},
             },
         )
 
         iteration_time = time.time() - iteration_start
+
+        # Compute and store primary metric improvement
+        def _select_primary_metric(metrics: Dict[str, Any]) -> str:
+            if isinstance(metrics, dict) and "combined_score" in metrics:
+                return "combined_score"
+            if isinstance(metrics, dict) and "performance_score" in metrics:
+                return "performance_score"
+            return ""
+
+        primary_metric = _select_primary_metric(child_metrics if isinstance(child_metrics, dict) else {})
+        if primary_metric:
+            try:
+                p_val = float(parent.metrics.get(primary_metric, 0.0))
+                c_val = float(child_metrics.get(primary_metric, 0.0)) if isinstance(child_metrics, dict) else 0.0
+                delta_val = c_val - p_val
+                child_program.metadata["primary_metric"] = primary_metric
+                child_program.metadata["primary_metric_delta"] = delta_val
+            except Exception:
+                pass
+
+        # Append structured intent/result log (JSONL) per iteration
+        try:
+            log_dir = getattr(_worker_config, "log_dir", None)
+            if log_dir:
+                os.makedirs(log_dir, exist_ok=True)
+                intent_log_path = os.path.join(log_dir, "intent_log.jsonl")
+                entry = {
+                    "iteration": iteration,
+                    "parent_id": parent.id,
+                    "child_id": child_id,
+                    "intent": llm_plan if llm_plan is not None else {},
+                    "validator_output": child_metrics if isinstance(child_metrics, dict) else {},
+                    "primary_metric": child_program.metadata.get("primary_metric", ""),
+                    "primary_metric_delta": child_program.metadata.get("primary_metric_delta", 0.0),
+                    "timestamp": time.time(),
+                }
+                with open(intent_log_path, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception as e:
+            logger.debug(f"Intent log append failed: {e}")
 
         return SerializableResult(
             child_program_dict=child_program.to_dict(),

@@ -11,11 +11,11 @@ max_code_length: 20000  # Increased from 10000 for deeper exploration
 
 # LLM Configuration
 llm:
-  api_base: "https://openrouter.ai/api/v1"
+  # api_base: "https://api.openai.com/v1"  # use default OpenAI endpoint
   models:
-    - name: "google/gemini-2.5-flash"
+    - name: "gpt-5"
       weight: 0.8
-    - name: "google/gemini-2.5-pro"
+    - name: "gpt-5-mini"
       weight: 0.2
   
   temperature: 0.4  # Optimal (better than 0.2, 0.6, 0.8)
