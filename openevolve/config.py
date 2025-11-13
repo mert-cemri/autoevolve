@@ -334,6 +334,20 @@ class EvolutionTraceConfig:
 
 
 @dataclass
+class CoachConfig:
+    """Configuration for diagnosis-only LLM coach injection"""
+    enabled: bool = False
+    window: int = 10          # iterations without a new best before triggering
+    cooldown: int = 10        # iterations to cool down after trigger
+    hint_iters: int = 2       # how many iterations to prepend the alert
+    # Optional periodic stagnancy ping (cheap yes/no) before diagnosis
+    ping_after: int = 0       # start pinging after this iteration (0 disables)
+    ping_every: int = 0       # ping every N iterations (0 disables)
+    ping_model: str = "gpt-5-mini"
+    ping_max_tokens: int = 300
+
+
+@dataclass
 class Config:
     """Master configuration for OpenEvolve"""
 
@@ -352,6 +366,7 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
+    coach: CoachConfig = field(default_factory=CoachConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -377,7 +392,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "coach"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -402,6 +417,8 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
+        if "coach" in config_dict:
+            config.coach = CoachConfig(**config_dict["coach"])
 
         return config
 
@@ -478,6 +495,16 @@ class Config:
                 "output_path": self.evolution_trace.output_path,
                 "buffer_size": self.evolution_trace.buffer_size,
                 "compress": self.evolution_trace.compress,
+            },
+            "coach": {
+                "enabled": self.coach.enabled,
+                "window": self.coach.window,
+                "cooldown": self.coach.cooldown,
+                "hint_iters": self.coach.hint_iters,
+                "ping_after": self.coach.ping_after,
+                "ping_every": self.coach.ping_every,
+                "ping_model": self.coach.ping_model,
+                "ping_max_tokens": self.coach.ping_max_tokens,
             },
             # Evolution settings
             "diff_based_evolution": self.diff_based_evolution,

@@ -1,4 +1,4 @@
-# Configuration for eigenvectors_complex task - Optimized Gemini Flash 2.5
+# Configuration for affine_transform_2d task - Optimized Gemini Flash 2.5
 # Achieved 1.64x AlgoTune Score with these settings
 
 # General settings
@@ -61,21 +61,12 @@ prompt:
 
     Below you find the description of the task you will have to solve. Read it carefully and understand what the problem is and what your solver should do.
 
-    You are an expert programmer specializing in matrix_operations algorithms. Your task is to improve the eigenvectors_complex algorithm implementation with baseline comparison.
+    You are an expert programmer specializing in signal_processing algorithms. Your task is to improve the affine_transform_2d algorithm implementation with baseline comparison.
 
     The problem description is:
-    EigenvectorsComplex Task:
+    2D Affine Transform
 
-    Given a square matrix with real entries, the task is to compute its eigenpairs (eigenvalues and eigenvectors).
-    Although the matrix is real, its eigenvalues may be complex.
-    The goal is to compute the approximated eigenpairs and return:
-      - A list of eigenvalues (complex numbers) sorted in descending order. The sorting order is defined as:
-          first by the real part (in descending order), then by the imaginary part (in descending order).
-      - A list of corresponding eigenvectors, each represented as a list of complex numbers, normalized to unit Euclidean norm.
-
-    A valid solution is a tuple (eigenvalues, eigenvectors) where:
-      - eigenvalues is a list of n numbers (complex or real) sorted as specified.
-      - eigenvectors is an array of n eigenvectors, each of length n, representing the eigenvector corresponding to the eigenvalue at the same index.
+    Apply a 2D affine transformation to an input image (2D array). The transformation is defined by a 2x3 matrix which combines rotation, scaling, shearing, and translation. This task uses cubic spline interpolation (order=3) and handles boundary conditions using the 'constant' mode (padding with 0).
 
     Focus on improving the solve method to correctly handle the input format and produce valid solutions efficiently. Your solution will be compared against the reference AlgoTune baseline implementation to measure speedup and correctness.
     
@@ -128,7 +119,18 @@ evaluator:
 # AlgoTune task-specific configuration
 algotune:
   num_trials: 5
-  data_size: 25
+  data_size: 100
   timeout: 300
   num_runs: 3
   warmup_runs: 1
+
+# Coach (diagnosis-only)
+coach:
+  enabled: true
+  window: 10
+  cooldown: 5
+  hint_iters: 2
+  ping_after: 10
+  ping_every: 5
+  ping_model: "gpt-5-mini"
+# Configuration for affine_transform_2d with diagnosis-only coach enabled

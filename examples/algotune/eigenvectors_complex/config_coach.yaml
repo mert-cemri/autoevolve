@@ -132,3 +132,11 @@ algotune:
   timeout: 300
   num_runs: 3
   warmup_runs: 1
+
+# Coach (diagnosis-only)
+coach:
+  enabled: true
+  window: 10
+  cooldown: 10
+  hint_iters: 2
+# Configuration for eigenvectors_complex with diagnosis-only coach enabled
