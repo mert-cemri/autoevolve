@@ -58,12 +58,12 @@ database:
   # Feature dimensions for MAP-Elites grid
   feature_dimensions:
     - "sum_radii"        # Primary objective: maximize sum of radii
-    - "eval_time"        # Efficiency: faster solutions are better
+    - "complexity"       # Code complexity (built-in feature)
 
   # Feature bins for grid granularity
   feature_bins:
     sum_radii: 20        # Fine-grained binning for sum_radii (0.0 to 2.7)
-    eval_time: 10        # Time bins (0 to 60+ seconds)
+    complexity: 10       # Complexity bins (code length)
 
   # Selection strategy
   elite_selection_ratio: 0.3
