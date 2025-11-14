@@ -87,6 +87,7 @@ evaluator:
 diff_based_evolution: false
 allow_full_rewrites: true
 max_code_length: 100000
+k_children: 3  # Best-of-3: Generate 3 children, pick best, add all to archive
 
 # Early stopping
 early_stopping_patience: 30

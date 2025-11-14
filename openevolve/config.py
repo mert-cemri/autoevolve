@@ -356,6 +356,7 @@ class Config:
     # Evolution settings
     diff_based_evolution: bool = True
     max_code_length: int = 10000
+    k_children: int = 1  # Number of children to generate per iteration (best-of-K)
 
     # Early stopping settings
     early_stopping_patience: Optional[int] = None

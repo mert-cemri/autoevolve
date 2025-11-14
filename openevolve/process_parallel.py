@@ -32,6 +32,7 @@ class SerializableResult:
     artifacts: Optional[Dict[str, Any]] = None
     iteration: int = 0
     error: Optional[str] = None
+    candidate_programs: Optional[List[Dict[str, Any]]] = None  # All K children for best-of-K
 
 
 def _worker_init(config_dict: dict, evaluation_file: str, parent_env: dict = None) -> None:
@@ -183,88 +184,112 @@ def _run_iteration_worker(
 
         iteration_start = time.time()
 
-        # Generate code modification (sync wrapper for async)
-        try:
-            llm_response = asyncio.run(
-                _worker_llm_ensemble.generate_with_context(
-                    system_message=prompt["system"],
-                    messages=[{"role": "user", "content": prompt["user"]}],
-                )
-            )
-        except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
-            return SerializableResult(error=f"LLM generation failed: {str(e)}", iteration=iteration)
+        # Best-of-K: Generate K children and pick the best
+        k_children = getattr(_worker_config, 'k_children', 1)
+        candidate_programs = []
 
-        # Check for None response
-        if llm_response is None:
-            return SerializableResult(error="LLM returned None response", iteration=iteration)
-
-        # Parse response based on evolution mode
-        if _worker_config.diff_based_evolution:
-            from openevolve.utils.code_utils import extract_diffs, apply_diff, format_diff_summary
-
-            diff_blocks = extract_diffs(llm_response)
-            if not diff_blocks:
-                return SerializableResult(
-                    error=f"No valid diffs found in response", iteration=iteration
+        for k_idx in range(k_children):
+            try:
+                # Generate code modification (sync wrapper for async)
+                llm_response = asyncio.run(
+                    _worker_llm_ensemble.generate_with_context(
+                        system_message=prompt["system"],
+                        messages=[{"role": "user", "content": prompt["user"]}],
+                    )
                 )
 
-            child_code = apply_diff(parent.code, llm_response)
-            changes_summary = format_diff_summary(diff_blocks)
-        else:
-            from openevolve.utils.code_utils import parse_full_rewrite
+                if llm_response is None:
+                    logger.warning(f"LLM returned None for candidate {k_idx+1}/{k_children}")
+                    continue
 
-            new_code = parse_full_rewrite(llm_response, _worker_config.language)
-            if not new_code:
-                return SerializableResult(
-                    error=f"No valid code found in response", iteration=iteration
+                # Parse response based on evolution mode
+                if _worker_config.diff_based_evolution:
+                    from openevolve.utils.code_utils import extract_diffs, apply_diff, format_diff_summary
+
+                    diff_blocks = extract_diffs(llm_response)
+                    if not diff_blocks:
+                        logger.warning(f"No valid diffs found for candidate {k_idx+1}/{k_children}")
+                        continue
+
+                    child_code = apply_diff(parent.code, llm_response)
+                    changes_summary = format_diff_summary(diff_blocks)
+                else:
+                    from openevolve.utils.code_utils import parse_full_rewrite
+
+                    new_code = parse_full_rewrite(llm_response, _worker_config.language)
+                    if not new_code:
+                        logger.warning(f"No valid code found for candidate {k_idx+1}/{k_children}")
+                        continue
+
+                    child_code = new_code
+                    changes_summary = "Full rewrite"
+
+                # Check code length
+                if len(child_code) > _worker_config.max_code_length:
+                    logger.warning(f"Candidate {k_idx+1}/{k_children} exceeds max length")
+                    continue
+
+                # Evaluate the child program
+                import uuid
+
+                child_id = str(uuid.uuid4())
+                child_metrics = asyncio.run(_worker_evaluator.evaluate_program(child_code, child_id))
+
+                # Get artifacts
+                artifacts = _worker_evaluator.get_pending_artifacts(child_id)
+
+                # Create child program
+                child_program = Program(
+                    id=child_id,
+                    code=child_code,
+                    language=_worker_config.language,
+                    parent_id=parent.id,
+                    generation=parent.generation + 1,
+                    metrics=child_metrics,
+                    iteration_found=iteration,
+                    metadata={
+                        "changes": changes_summary,
+                        "parent_metrics": parent.metrics,
+                        "island": parent_island,
+                        "k_candidate": k_idx + 1,  # Track which candidate this was
+                    },
                 )
 
-            child_code = new_code
-            changes_summary = "Full rewrite"
+                candidate_programs.append(child_program)
 
-        # Check code length
-        if len(child_code) > _worker_config.max_code_length:
+            except Exception as e:
+                logger.warning(f"Error generating candidate {k_idx+1}/{k_children}: {e}")
+                continue
+
+        # Check if we generated any valid candidates
+        if not candidate_programs:
             return SerializableResult(
-                error=f"Generated code exceeds maximum length ({len(child_code)} > {_worker_config.max_code_length})",
-                iteration=iteration,
+                error=f"Failed to generate any valid candidates (k_children={k_children})",
+                iteration=iteration
             )
 
-        # Evaluate the child program
-        import uuid
-
-        child_id = str(uuid.uuid4())
-        child_metrics = asyncio.run(_worker_evaluator.evaluate_program(child_code, child_id))
-
-        # Get artifacts
-        artifacts = _worker_evaluator.get_pending_artifacts(child_id)
-
-        # Create child program
-        child_program = Program(
-            id=child_id,
-            code=child_code,
-            language=_worker_config.language,
-            parent_id=parent.id,
-            generation=parent.generation + 1,
-            metrics=child_metrics,
-            iteration_found=iteration,
-            metadata={
-                "changes": changes_summary,
-                "parent_metrics": parent.metrics,
-                "island": parent_island,
-            },
+        # Pick the best candidate based on fitness
+        from openevolve.utils.metrics_utils import get_fitness_score
+        best_child = max(
+            candidate_programs,
+            key=lambda p: get_fitness_score(p.metrics, db_snapshot.get("feature_dimensions", []))
         )
 
         iteration_time = time.time() - iteration_start
 
+        # Get the prompt/response for the best child (use first for simplicity)
+        # Note: In best-of-K, we generate K different responses, storing all would be expensive
+        # We return the best child's info and all candidates for archive addition
+
         return SerializableResult(
-            child_program_dict=child_program.to_dict(),
+            child_program_dict=best_child.to_dict(),
             parent_id=parent.id,
             iteration_time=iteration_time,
             prompt=prompt,
-            llm_response=llm_response,
-            artifacts=artifacts,
+            llm_response=f"Best of {k_children} candidates",
+            artifacts=_worker_evaluator.get_pending_artifacts(best_child.id),
             iteration=iteration,
+            candidate_programs=[p.to_dict() for p in candidate_programs],  # All K candidates
         )
 
     except Exception as e:
@@ -470,12 +495,28 @@ class ProcessParallelController:
                 if result.error:
                     logger.warning(f"Iteration {completed_iteration} error: {result.error}")
                 elif result.child_program_dict:
-                    # Reconstruct program from dict
+                    # Reconstruct best child program from dict
                     child_program = Program(**result.child_program_dict)
 
-                    # Add to database (will auto-inherit parent's island)
+                    # Add best child to database (will auto-inherit parent's island)
                     # No need to specify target_island - database will handle parent island inheritance
                     self.database.add(child_program, iteration=completed_iteration)
+
+                    # Best-of-K: Add all K candidate programs to archive
+                    if result.candidate_programs and len(result.candidate_programs) > 1:
+                        k_children = len(result.candidate_programs)
+                        logger.debug(f"Adding {k_children} candidates to archive (best-of-K)")
+
+                        for candidate_dict in result.candidate_programs:
+                            candidate_program = Program(**candidate_dict)
+
+                            # Add candidate to programs dict (needed for archive management)
+                            self.database.programs[candidate_program.id] = candidate_program
+
+                            # Try to add to archive (will only add if better than worst in archive)
+                            self.database._update_archive(candidate_program)
+
+                        logger.info(f"Iteration {completed_iteration}: Selected best of {k_children} candidates")
 
                     # Store artifacts
                     if result.artifacts:

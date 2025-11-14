@@ -417,12 +417,12 @@ class ProgramDatabase:
         rand_val = random.random()
 
         if rand_val < self.config.exploration_ratio:
-            # EXPLORATION: Sample randomly from island (diverse sampling)
-            parent = self._sample_from_island_random(island_id)
+            # EXPLORATION: Sample from archive (promotes diversity via elite programs)
+            parent = self._sample_from_archive_for_island(island_id)
             sampling_mode = "exploration"
         elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
-            # EXPLOITATION: Sample from archive (elite programs)
-            parent = self._sample_from_archive_for_island(island_id)
+            # EXPLOITATION: Pick highest combined_score from island (greedy exploitation)
+            parent = self._get_best_from_island(island_id)
             sampling_mode = "exploitation"
         else:
             # WEIGHTED: Use fitness-weighted sampling (remaining probability)
@@ -1509,6 +1509,31 @@ class ProgramDatabase:
             # Fall back to any valid archive program if island has none
             parent_id = random.choice(valid_archive)
             return self.programs[parent_id]
+
+    def _get_best_from_island(self, island_id: int) -> Program:
+        """
+        Get the program with highest combined_score from specified island
+
+        Args:
+            island_id: The island to select from
+
+        Returns:
+            Program with highest combined_score from the island
+        """
+        island_id = island_id % len(self.islands)
+        island_programs = [self.programs[pid] for pid in self.islands[island_id] if pid in self.programs]
+
+        if not island_programs:
+            logger.warning(f"Island {island_id} is empty for exploitation, falling back to random sampling")
+            return self._sample_random_parent()
+
+        # Sort by fitness (combined_score or average of metrics)
+        island_programs.sort(
+            key=lambda p: get_fitness_score(p.metrics, self.config.feature_dimensions),
+            reverse=True
+        )
+
+        return island_programs[0]  # Return best program
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
         """

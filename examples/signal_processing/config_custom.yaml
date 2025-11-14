@@ -40,3 +40,4 @@ evaluator:
 # Evolution settings
 diff_based_evolution: true
 max_code_length: 60000
+k_children: 3  # Best-of-3: Generate 3 children, pick best, add all to archive
