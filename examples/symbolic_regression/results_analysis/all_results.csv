@@ -1,2 +1,0 @@
-split,problem_id,problem_index,strategy,strategy_raw,combined_score,mse_train_score,raw_mse_train,negative_mse,iteration,generation,can_run,optimization_success,program_id,parent_id,result_file
-chem_react,CRK0,0,map_elites,openevolve,8.99579267738858,,,-9.734796172484148e-12,29,2,,False,af51c07b-d64d-472f-b0d3-e351b93fcc81,274f9735-2dab-430e-bcc8-19b04ba043ec,problems/chem_react/CRK0/openevolve_output_gradient/best/best_program_info.json

@@ -65,10 +65,6 @@ class Program:
     # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
 
-    # Gradient tracking for parent selection
-    visit_count: int = 0  # Times selected as parent for mutation
-    total_gradient: float = 0.0  # Sum of gradients from children (ΔS / distance)
-
     # Prompts
     prompts: Optional[Dict[str, Any]] = None
 
@@ -76,12 +72,8 @@ class Program:
     artifacts_json: Optional[str] = None  # JSON-serialized small artifacts
     artifact_dir: Optional[str] = None  # Path to large artifact files
 
-    @property
-    def avg_gradient(self) -> Optional[float]:
-        """Average gradient from past mutations. None if never visited."""
-        if self.visit_count == 0:
-            return None
-        return self.total_gradient / self.visit_count
+    # Embedding vector for novelty rejection sampling
+    embedding: Optional[List[float]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary representation"""
@@ -193,21 +185,14 @@ class ProgramDatabase:
                 dim: self.feature_bins for dim in config.feature_dimensions
             }
 
-        # Adaptive exploration/exploitation
-        self.use_adaptive_search = getattr(config, "use_adaptive_search", False)
-        if self.use_adaptive_search:
-            from collections import deque
-            self.adaptive_window_size = getattr(config, "adaptive_window_size", 10)
-            self.adaptive_min_exploration = getattr(config, "adaptive_min_exploration", 0.1)
-            self.adaptive_max_exploration = getattr(config, "adaptive_max_exploration", 0.7)
-            self.recent_improvements = deque(maxlen=self.adaptive_window_size)
-            self.best_fitness_score = None  # Track best fitness for improvement detection
-            logger.info(
-                f"Enabled adaptive search: window={self.adaptive_window_size}, "
-                f"exploration=[{self.adaptive_min_exploration}, {self.adaptive_max_exploration}]"
-            )
-
         logger.info(f"Initialized program database with {len(self.programs)} programs")
+        
+        # Novelty judge setup
+        from openevolve.embedding import EmbeddingClient
+        self.novelty_llm = config.novelty_llm
+        self.embedding_client = EmbeddingClient(config.embedding_model) if config.embedding_model else None
+        self.similarity_threshold = config.similarity_threshold
+            
 
     def add(
         self, program: Program, iteration: int = None, target_island: Optional[int] = None
@@ -264,6 +249,11 @@ class ProgramDatabase:
             island_idx = self.current_island
 
         island_idx = island_idx % len(self.islands)  # Ensure valid island
+
+        # Novelty check before adding
+        if not self._is_novel(program.id, island_idx):
+            logger.debug(f"Program {program.id} failed in novelty check and won't be added in the island {island_idx}")
+            return program.id  # Do not add non-novel program
 
         # Add to island-specific feature map (replacing existing if better)
         feature_key = self._feature_coords_to_key(feature_coords)
@@ -326,6 +316,10 @@ class ProgramDatabase:
                         self.archive.discard(existing_program_id)
                         self.archive.add(program.id)
 
+                # Remove replaced program from island set to keep it consistent with feature map
+                # This prevents accumulation of stale/replaced programs in the island
+                self.islands[island_idx].discard(existing_program_id)
+
             island_feature_map[feature_key] = program.id
 
         # Add to island
@@ -343,33 +337,6 @@ class ProgramDatabase:
 
         # Update the absolute best program tracking (after population enforcement)
         self._update_best_program(program)
-
-        # Track improvements for adaptive search
-        if self.use_adaptive_search:
-            # Get current best fitness
-            if self.best_program_id and self.best_program_id in self.programs:
-                current_best_fitness = get_fitness_score(
-                    self.programs[self.best_program_id].metrics,
-                    self.config.feature_dimensions
-                )
-
-                # Check if we improved
-                if self.best_fitness_score is None:
-                    # First program
-                    improved = True
-                    self.best_fitness_score = current_best_fitness
-                elif current_best_fitness > self.best_fitness_score:
-                    # Score improved
-                    improved = True
-                    logger.debug(
-                        f"Adaptive: Fitness improved {self.best_fitness_score:.6f} → {current_best_fitness:.6f}"
-                    )
-                    self.best_fitness_score = current_best_fitness
-                else:
-                    # No improvement
-                    improved = False
-
-                self.recent_improvements.append(1 if improved else 0)
 
         # Update island-specific best program tracking
         self._update_island_best_program(program, island_idx)
@@ -420,87 +387,70 @@ class ProgramDatabase:
     ) -> Tuple[Program, List[Program]]:
         """
         Sample a program and inspirations from a specific island without modifying current_island
-        
+
         This method is thread-safe and doesn't modify shared state, avoiding race conditions
         when multiple workers sample from different islands concurrently.
-        
+
+        Uses the same exploration/exploitation/random strategy as sample() to ensure
+        consistent behavior between single-process and parallel execution modes.
+
         Args:
             island_id: The island to sample from
             num_inspirations: Number of inspiration programs to sample (defaults to 5)
-            
+
         Returns:
             Tuple of (parent_program, inspiration_programs)
         """
         # Ensure valid island ID
         island_id = island_id % len(self.islands)
-        
+
         # Get programs from the specific island
         island_programs = list(self.islands[island_id])
-        
+
         if not island_programs:
             # Island is empty, fall back to sampling from all programs
             logger.debug(f"Island {island_id} is empty, sampling from all programs")
             return self.sample(num_inspirations)
-        
-        # Select parent from island programs
-        if len(island_programs) == 1:
-            parent_id = island_programs[0]
+
+        # Use exploration_ratio and exploitation_ratio to decide sampling strategy
+        # This matches the logic in _sample_parent() for consistent behavior
+        rand_val = random.random()
+
+        if rand_val < self.config.exploration_ratio:
+            # EXPLORATION: Sample randomly from island (diverse sampling)
+            parent = self._sample_from_island_random(island_id)
+            sampling_mode = "exploration"
+        elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
+            # EXPLOITATION: Sample from archive (elite programs)
+            parent = self._sample_from_archive_for_island(island_id)
+            sampling_mode = "exploitation"
         else:
-            # Use weighted sampling based on program scores
-            island_program_objects = [
-                self.programs[pid] for pid in island_programs 
-                if pid in self.programs
-            ]
-            
-            if not island_program_objects:
-                # Fallback if programs not found
-                parent_id = random.choice(island_programs)
-            else:
-                # Calculate weights based on fitness scores
-                weights = []
-                for prog in island_program_objects:
-                    fitness = get_fitness_score(prog.metrics, self.config.feature_dimensions)
-                    # Add small epsilon to avoid zero weights
-                    weights.append(max(fitness, 0.001))
-                
-                # Normalize weights
-                total_weight = sum(weights)
-                if total_weight > 0:
-                    weights = [w / total_weight for w in weights]
-                else:
-                    weights = [1.0 / len(island_program_objects)] * len(island_program_objects)
-                
-                # Sample parent based on weights
-                parent = random.choices(island_program_objects, weights=weights, k=1)[0]
-                parent_id = parent.id
-        
-        parent = self.programs.get(parent_id)
-        if not parent:
-            # Should not happen, but handle gracefully
-            logger.error(f"Parent program {parent_id} not found in database")
-            return self.sample(num_inspirations)
-        
+            # WEIGHTED: Use fitness-weighted sampling (remaining probability)
+            parent = self._sample_from_island_weighted(island_id)
+            sampling_mode = "weighted"
+
         # Select inspirations from the same island
         if num_inspirations is None:
             num_inspirations = 5  # Default for backward compatibility
-            
+
         # Get other programs from the island for inspirations
-        other_programs = [pid for pid in island_programs if pid != parent_id]
-        
+        other_programs = [pid for pid in island_programs if pid != parent.id]
+
         if len(other_programs) < num_inspirations:
             # Not enough programs in island, use what we have
             inspiration_ids = other_programs
         else:
             # Sample inspirations
             inspiration_ids = random.sample(other_programs, num_inspirations)
-        
+
         inspirations = [
-            self.programs[pid] for pid in inspiration_ids 
+            self.programs[pid] for pid in inspiration_ids
             if pid in self.programs
         ]
-        
+
         logger.debug(
-            f"Sampled parent {parent.id} and {len(inspirations)} inspirations from island {island_id}"
+            f"Sampled parent {parent.id} and {len(inspirations)} inspirations from island {island_id} "
+            f"(mode: {sampling_mode}, rand_val: {rand_val:.3f})"
         )
         return parent, inspirations
 
@@ -666,13 +616,6 @@ class ProgramDatabase:
             "feature_stats": self._serialize_feature_stats(),
         }
 
-        # Save adaptive search state
-        if self.use_adaptive_search:
-            metadata["adaptive_search"] = {
-                "recent_improvements": list(self.recent_improvements),
-                "best_fitness_score": self.best_fitness_score,
-            }
-
         with open(os.path.join(save_path, "metadata.json"), "w") as f:
             json.dump(metadata, f)
 
@@ -710,19 +653,6 @@ class ProgramDatabase:
 
             # Load feature_stats for MAP-Elites grid stability
             self.feature_stats = self._deserialize_feature_stats(metadata.get("feature_stats", {}))
-
-            # Load adaptive search state
-            if self.use_adaptive_search and "adaptive_search" in metadata:
-                from collections import deque
-                adaptive_data = metadata["adaptive_search"]
-                self.recent_improvements = deque(
-                    adaptive_data.get("recent_improvements", []),
-                    maxlen=self.adaptive_window_size
-                )
-                self.best_fitness_score = adaptive_data.get("best_fitness_score")
-                logger.info(
-                    f"Loaded adaptive search state: {len(self.recent_improvements)} recent improvements"
-                )
 
             logger.info(f"Loaded database metadata with last_iteration={self.last_iteration}")
             if self.feature_stats:
@@ -895,7 +825,20 @@ class ProgramDatabase:
         coords = []
 
         for dim in self.config.feature_dimensions:
-            if dim == "complexity":
+            # PRIORITY 1: Check if this is a custom metric from the evaluator
+            # This allows users to override built-in features with their own implementations
+            if dim in program.metrics:
+                # Use custom metric from evaluator
+                score = program.metrics[dim]
+                # Update stats and scale
+                self._update_feature_stats(dim, score)
+                scaled_value = self._scale_feature_value(dim, score)
+                num_bins = self.feature_bins_per_dim.get(dim, self.feature_bins)
+                bin_idx = int(scaled_value * num_bins)
+                bin_idx = max(0, min(num_bins - 1, bin_idx))
+                coords.append(bin_idx)
+            # PRIORITY 2: Fall back to built-in features if not in metrics
+            elif dim == "complexity":
                 # Use code length as complexity measure
                 complexity = len(program.code)
                 bin_idx = self._calculate_complexity_bin(complexity)
@@ -922,21 +865,12 @@ class ProgramDatabase:
                     bin_idx = int(scaled_value * num_bins)
                     bin_idx = max(0, min(num_bins - 1, bin_idx))
                 coords.append(bin_idx)
-            elif dim in program.metrics:
-                # Use specific metric
-                score = program.metrics[dim]
-                # Update stats and scale
-                self._update_feature_stats(dim, score)
-                scaled_value = self._scale_feature_value(dim, score)
-                num_bins = self.feature_bins_per_dim.get(dim, self.feature_bins)
-                bin_idx = int(scaled_value * num_bins)
-                bin_idx = max(0, min(num_bins - 1, bin_idx))
-                coords.append(bin_idx)
             else:
                 # Feature not found - this is an error
                 raise ValueError(
                     f"Feature dimension '{dim}' specified in config but not found in program metrics. "
                     f"Available metrics: {list(program.metrics.keys())}. "
+                    f"Built-in features: 'complexity', 'diversity', 'score'. "
                     f"Either remove '{dim}' from feature_dimensions or ensure your evaluator returns it."
                 )
         # Only log coordinates at debug level for troubleshooting
@@ -1011,6 +945,120 @@ class ProgramDatabase:
             String key
         """
         return "-".join(str(c) for c in coords)
+
+    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
+        """
+        Adapted from SakanaAI/ShinkaEvolve (Apache-2.0 License)
+        Original source: https://github.com/SakanaAI/ShinkaEvolve/blob/main/shinka/database/dbase.py#L1452
+        
+        Compute cosine similarity between two vectors.
+        """
+        if not vec1 or not vec2 or len(vec1) != len(vec2):
+            return 0.0
+
+        arr1 = np.array(vec1, dtype=np.float32)
+        arr2 = np.array(vec2, dtype=np.float32)
+
+        norm_a = np.linalg.norm(arr1)
+        norm_b = np.linalg.norm(arr2)
+
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+
+        similarity = np.dot(arr1, arr2) / (norm_a * norm_b)
+        
+        return float(similarity)
+    
+    def _llm_judge_novelty(self, program: Program, similar_program: Program) -> bool:
+        """
+        Use LLM to judge if a program is novel compared to a similar existing program
+        """
+        import asyncio
+        from openevolve.novelty_judge import NOVELTY_SYSTEM_MSG, NOVELTY_USER_MSG
+        
+        user_msg = NOVELTY_USER_MSG.format(
+            language=program.language,
+            existing_code=similar_program.code,
+            proposed_code=program.code,
+        )
+        
+        try:
+            content: str = asyncio.run(
+                self.novelty_llm.generate_with_context(
+                    system_message=NOVELTY_SYSTEM_MSG,
+                    messages=[{"role": "user", "content": user_msg}],
+                )
+            )
+
+            if content is None or content is None:
+                logger.warning("Novelty LLM returned empty response")
+                return True
+
+            content = content.strip()
+
+            # Parse the response
+            NOVEL_i = content.upper().find("NOVEL")
+            NOT_NOVEL_i = content.upper().find("NOT NOVEL")
+            
+            if NOVEL_i == -1 and NOT_NOVEL_i == -1:
+                logger.warning(f"Unexpected novelty LLM response: {content}")
+                return True  # Assume novel if we can't parse
+            
+            if NOVEL_i != -1 and NOT_NOVEL_i != -1:
+                # Both found, take the one that appears first
+                is_novel = NOVEL_i < NOT_NOVEL_i
+            elif NOVEL_i != -1:
+                is_novel = True
+            else:
+                is_novel = False
+                
+            return is_novel
+
+        except Exception as e:
+            logger.error(f"Error in novelty LLM check: {e}")
+    
+        return True
+    
+    def _is_novel(self, program_id: int, island_idx: int) -> bool:
+        """
+        Determine if a program is novel based on diversity to existing programs
+
+        Args:
+            program: Program to check
+            island_idx: Island index
+            
+        Returns:
+            True if novel, False otherwise
+        """
+        if self.embedding_client is None or self.similarity_threshold <= 0.0:
+            # Novelty checking disabled
+            return True
+
+        program = self.programs[program_id]
+        embd = self.embedding_client.get_embedding(program.code)
+        self.programs[program_id].embedding = embd
+        
+        max_smlty = float('-inf')
+        max_smlty_pid = None
+        
+        for pid in self.islands[island_idx]:
+            other = self.programs[pid]
+            
+            if other.embedding is None:
+                logger.log("Warning: Program %s has no embedding, skipping similarity check", other.id)
+                continue
+            
+            similarity = self._cosine_similarity(embd, other.embedding)
+            
+            if similarity >= max(max_smlty, self.similarity_threshold):
+                max_smlty = similarity
+                max_smlty_pid = pid
+            
+        if max_smlty_pid is None:
+            # No similar programs found, consider it novel
+            return True
+            
+        return self._llm_judge_novelty(program, self.programs[max_smlty_pid])
 
     def _is_better(self, program1: Program, program2: Program) -> bool:
         """
@@ -1105,26 +1153,10 @@ class ProgramDatabase:
         # Compare with current best program (if it still exists)
         if self.best_program_id not in self.programs:
             logger.warning(
-                f"Best program {self.best_program_id} no longer exists in database"
+                f"Best program {self.best_program_id} no longer exists, clearing reference"
             )
-            # Find the actual best program from remaining population
-            if self.programs:
-                all_programs = list(self.programs.values())
-                current_best = max(
-                    all_programs,
-                    key=lambda p: get_fitness_score(p.metrics, self.config.feature_dimensions)
-                )
-                # Compare new program with actual best
-                if self._is_better(program, current_best):
-                    self.best_program_id = program.id
-                    logger.info(f"Set new best program to {program.id}")
-                else:
-                    self.best_program_id = current_best.id
-                    logger.info(f"Restored best program to {current_best.id} (actual best in population)")
-            else:
-                # No programs in database, use new one
-                self.best_program_id = program.id
-                logger.info(f"Set new best program to {program.id} (empty population)")
+            self.best_program_id = program.id
+            logger.info(f"Set new best program to {program.id}")
             return
 
         current_best = self.programs[self.best_program_id]
@@ -1204,48 +1236,15 @@ class ProgramDatabase:
         Returns:
             Parent program from current island
         """
-        # Get exploration ratio (adaptive or static)
-        if self.use_adaptive_search and len(self.recent_improvements) > 0:
-            # Calculate improvement rate
-            improvement_rate = sum(self.recent_improvements) / len(self.recent_improvements)
-
-            # Adaptive formula: more improvements → less exploration
-            exploration_ratio = (
-                self.adaptive_max_exploration -
-                (self.adaptive_max_exploration - self.adaptive_min_exploration) * improvement_rate
-            )
-
-            # Log occasionally for visibility
-            if random.random() < 0.01:  # 1% of samples
-                logger.debug(
-                    f"Adaptive: improvement_rate={improvement_rate:.2f}, "
-                    f"exploration_ratio={exploration_ratio:.2f}"
-                )
-        else:
-            # Use static ratio from config
-            exploration_ratio = self.config.exploration_ratio
-
-        # Random ratio is fixed at 10%
-        random_ratio = 0.1
-
-        # Exploitation gets the remainder
-        exploitation_ratio = 1.0 - exploration_ratio - random_ratio
-        exploitation_ratio = max(0.0, exploitation_ratio)  # Ensure non-negative
-
-        # Use ratios to decide sampling strategy
+        # Use exploration_ratio and exploitation_ratio to decide sampling strategy
         rand_val = random.random()
 
-        if rand_val < exploration_ratio:
+        if rand_val < self.config.exploration_ratio:
             # EXPLORATION: Sample from current island (diverse sampling)
             return self._sample_exploration_parent()
-        elif rand_val < exploration_ratio + exploitation_ratio:
-            # EXPLOITATION: Use gradient-based or archive-based selection
-            if self.config.use_gradient_selection:
-                # Gradient-based: select by max(avg_gradient)
-                return self._sample_gradient_parent()
-            else:
-                # Traditional: sample from archive (elite programs)
-                return self._sample_exploitation_parent()
+        elif rand_val < self.config.exploration_ratio + self.config.exploitation_ratio:
+            # EXPLOITATION: Sample from archive (elite programs)
+            return self._sample_exploitation_parent()
         else:
             # RANDOM: Sample from any program (remaining probability)
             return self._sample_random_parent()
@@ -1385,49 +1384,131 @@ class ProgramDatabase:
         program_id = random.choice(list(self.programs.keys()))
         return self.programs[program_id]
 
-    def _sample_gradient_parent(self) -> Program:
+    def _sample_from_island_weighted(self, island_id: int) -> Program:
         """
-        Sample parent using gradient-based selection.
+        Sample a parent from a specific island using fitness-weighted selection
 
-        Selects the program with the highest average gradient (improvement per unit change).
-        Unvisited programs (visit_count == 0) get infinite priority to ensure exploration.
-
-        This implements gradient ascent in program space, automatically balancing
-        exploration (unvisited) and exploitation (high gradient).
+        Args:
+            island_id: The island to sample from
 
         Returns:
-            Program with highest expected gradient
+            Parent program selected using fitness-weighted sampling
         """
-        if not self.programs:
-            raise ValueError("No programs available for sampling")
+        island_id = island_id % len(self.islands)
+        island_programs = list(self.islands[island_id])
 
-        def gradient_score(program: Program) -> float:
-            """Compute gradient score for parent selection."""
-            # Unvisited programs get infinite priority (forced exploration)
-            if program.visit_count == 0:
-                return float('inf')
+        if not island_programs:
+            # Island is empty, fall back to any available program
+            logger.debug(f"Island {island_id} is empty, sampling from all programs")
+            return self._sample_random_parent()
 
-            # Otherwise use average gradient from past mutations
-            # This is delta_score / distance, averaged over all children
-            return program.avg_gradient or 0.0
+        # Select parent from island programs
+        if len(island_programs) == 1:
+            parent_id = island_programs[0]
+        else:
+            # Use weighted sampling based on program scores
+            island_program_objects = [
+                self.programs[pid] for pid in island_programs
+                if pid in self.programs
+            ]
 
-        # Select program with highest gradient score
-        best_program = max(self.programs.values(), key=gradient_score)
-
-        # Log occasionally for visibility
-        if random.random() < 0.05:  # 5% of samples
-            if best_program.visit_count == 0:
-                logger.debug(
-                    f"Gradient selection: Exploring unvisited program {best_program.id}"
-                )
+            if not island_program_objects:
+                # Fallback if programs not found
+                parent_id = random.choice(island_programs)
             else:
-                logger.debug(
-                    f"Gradient selection: Selected program {best_program.id} "
-                    f"(avg_gradient={best_program.avg_gradient:.3f}, "
-                    f"visit_count={best_program.visit_count})"
-                )
+                # Calculate weights based on fitness scores
+                weights = []
+                for prog in island_program_objects:
+                    fitness = get_fitness_score(prog.metrics, self.config.feature_dimensions)
+                    # Add small epsilon to avoid zero weights
+                    weights.append(max(fitness, 0.001))
 
-        return best_program
+                # Normalize weights
+                total_weight = sum(weights)
+                if total_weight > 0:
+                    weights = [w / total_weight for w in weights]
+                else:
+                    weights = [1.0 / len(island_program_objects)] * len(island_program_objects)
+
+                # Sample parent based on weights
+                parent = random.choices(island_program_objects, weights=weights, k=1)[0]
+                parent_id = parent.id
+
+        parent = self.programs.get(parent_id)
+        if not parent:
+            # Should not happen, but handle gracefully
+            logger.error(f"Parent program {parent_id} not found in database")
+            return self._sample_random_parent()
+
+        return parent
+
+    def _sample_from_island_random(self, island_id: int) -> Program:
+        """
+        Sample a completely random parent from a specific island (uniform distribution)
+
+        Args:
+            island_id: The island to sample from
+
+        Returns:
+            Parent program selected uniformly at random
+        """
+        island_id = island_id % len(self.islands)
+        island_programs = list(self.islands[island_id])
+
+        if not island_programs:
+            # Island is empty, fall back to any available program
+            logger.debug(f"Island {island_id} is empty, sampling from all programs")
+            return self._sample_random_parent()
+
+        # Clean up stale references
+        valid_programs = [pid for pid in island_programs if pid in self.programs]
+
+        if not valid_programs:
+            logger.warning(f"Island {island_id} has no valid programs, falling back to random sampling")
+            return self._sample_random_parent()
+
+        # Uniform random selection
+        parent_id = random.choice(valid_programs)
+        return self.programs[parent_id]
+
+    def _sample_from_archive_for_island(self, island_id: int) -> Program:
+        """
+        Sample a parent from the archive, preferring programs from the specified island
+
+        Args:
+            island_id: The island to prefer programs from
+
+        Returns:
+            Parent program from archive (preferably from the specified island)
+        """
+        if not self.archive:
+            # Fallback to weighted sampling from island
+            logger.debug(f"Archive is empty, falling back to weighted island sampling")
+            return self._sample_from_island_weighted(island_id)
+
+        # Clean up stale references in archive
+        valid_archive = [pid for pid in self.archive if pid in self.programs]
+
+        if not valid_archive:
+            logger.warning("Archive has no valid programs, falling back to weighted island sampling")
+            return self._sample_from_island_weighted(island_id)
+
+        island_id = island_id % len(self.islands)
+
+        # Prefer programs from the specified island in archive
+        archive_programs_in_island = [
+            pid
+            for pid in valid_archive
+            if self.programs[pid].metadata.get("island") == island_id
+        ]
+
+        if archive_programs_in_island:
+            parent_id = random.choice(archive_programs_in_island)
+            return self.programs[parent_id]
+        else:
+            # Fall back to any valid archive program if island has none
+            parent_id = random.choice(valid_archive)
+            return self.programs[parent_id]
 
     def _sample_inspirations(self, parent: Program, n: int = 5) -> List[Program]:
         """
@@ -1710,6 +1791,20 @@ class ProgramDatabase:
                     continue
 
                 for target_island in target_islands:
+                    # Skip migration if target island already has a program with identical code
+                    # Identical code produces identical metrics, so migration would be wasteful
+                    target_island_programs = [
+                        self.programs[pid] for pid in self.islands[target_island]
+                        if pid in self.programs
+                    ]
+                    has_duplicate_code = any(p.code == migrant.code for p in target_island_programs)
+
+                    if has_duplicate_code:
+                        logger.debug(
+                            f"Skipping migration of program {migrant.id[:8]} to island {target_island} "
+                            f"(duplicate code already exists)"
+                        )
+                        continue
                     # Create a copy for migration with simple new UUID
                     import uuid
                     migrant_copy = Program(
@@ -1722,23 +1817,15 @@ class ProgramDatabase:
                         metadata={**migrant.metadata, "island": target_island, "migrant": True},
                     )
 
-                    # Add to target island
-                    self.islands[target_island].add(migrant_copy.id)
-                    self.programs[migrant_copy.id] = migrant_copy
+                    # Use add() method to properly handle MAP-Elites deduplication,
+                    # feature map updates, and island tracking
+                    self.add(migrant_copy, target_island=target_island)
 
-                    # Update island-specific best program if migrant is better
-                    self._update_island_best_program(migrant_copy, target_island)
-
-                    # Log migration with MAP-Elites coordinates
-                    feature_coords = self._calculate_feature_coords(migrant_copy)
-                    coords_dict = {
-                        self.config.feature_dimensions[j]: feature_coords[j]
-                        for j in range(len(feature_coords))
-                    }
+                    # Log migration
                     logger.info(
-                        "Program migrated to island %d at MAP-Elites coords: %s",
+                        "Program %s migrated to island %d",
+                        migrant_copy.id[:8],
                         target_island,
-                        coords_dict,
                     )
 
         # Update last migration generation

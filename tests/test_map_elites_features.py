@@ -268,6 +268,86 @@ class TestMapElitesFeatures(unittest.TestCase):
         self.assertIn("not found in program metrics", str(context.exception))
         self.assertIn("score", str(context.exception))  # Should show available metrics
 
+    def test_custom_features_override_builtin(self):
+        """Test that custom complexity and diversity from evaluator override built-in calculations"""
+        # Create database with complexity and diversity as feature dimensions
+        config = Config()
+        config.database.in_memory = True
+        config.database.feature_dimensions = ["complexity", "diversity"]
+        config.database.feature_bins = 10
+        db = ProgramDatabase(config.database)
+
+        # Add a program with custom complexity and diversity metrics from evaluator
+        # The evaluator is providing its own definition of complexity and diversity
+        program = Program(
+            id="custom_override",
+            code="x" * 1000,  # 1000 chars - built-in would use this
+            language="python",
+            metrics={
+                "complexity": 42.5,  # Custom complexity from evaluator (NOT code length)
+                "diversity": 99.9,   # Custom diversity from evaluator (NOT code structure)
+                "score": 0.8,
+            },
+        )
+
+        # Add program to trigger feature coordinate calculation
+        db.add(program)
+
+        # Manually calculate what bins the custom values should map to
+        # The custom values should be used, not the built-in calculations
+
+        # For complexity: custom value is 42.5
+        db._update_feature_stats("complexity", 42.5)
+        custom_complexity_scaled = db._scale_feature_value("complexity", 42.5)
+        expected_complexity_bin = int(custom_complexity_scaled * 10)
+        expected_complexity_bin = max(0, min(9, expected_complexity_bin))
+
+        # For diversity: custom value is 99.9
+        db._update_feature_stats("diversity", 99.9)
+        custom_diversity_scaled = db._scale_feature_value("diversity", 99.9)
+        expected_diversity_bin = int(custom_diversity_scaled * 10)
+        expected_diversity_bin = max(0, min(9, expected_diversity_bin))
+
+        # Get actual coordinates
+        coords = db._calculate_feature_coords(program)
+
+        # Verify custom metrics were used
+        # If built-in was used for complexity, it would use len(code) = 1000
+        # If built-in was used for diversity, it would calculate code structure diversity
+        # With custom metrics, we should see the bins for 42.5 and 99.9
+        self.assertEqual(coords[0], expected_complexity_bin,
+                        "Custom complexity metric should override built-in code length")
+        self.assertEqual(coords[1], expected_diversity_bin,
+                        "Custom diversity metric should override built-in code diversity")
+
+        # Additional verification: test with multiple programs to ensure consistency
+        program2 = Program(
+            id="custom_override_2",
+            code="y" * 500,  # Different code length
+            language="python",
+            metrics={
+                "complexity": 10.0,  # Much lower than code length
+                "diversity": 5.0,    # Custom diversity
+                "score": 0.6,
+            },
+        )
+        db.add(program2)
+        coords2 = db._calculate_feature_coords(program2)
+
+        # Calculate expected bins for second program
+        db._update_feature_stats("complexity", 10.0)
+        custom_complexity_scaled_2 = db._scale_feature_value("complexity", 10.0)
+        expected_complexity_bin_2 = int(custom_complexity_scaled_2 * 10)
+        expected_complexity_bin_2 = max(0, min(9, expected_complexity_bin_2))
+
+        db._update_feature_stats("diversity", 5.0)
+        custom_diversity_scaled_2 = db._scale_feature_value("diversity", 5.0)
+        expected_diversity_bin_2 = int(custom_diversity_scaled_2 * 10)
+        expected_diversity_bin_2 = max(0, min(9, expected_diversity_bin_2))
+
+        self.assertEqual(coords2[0], expected_complexity_bin_2)
+        self.assertEqual(coords2[1], expected_diversity_bin_2)
+
 
 if __name__ == "__main__":
     unittest.main()

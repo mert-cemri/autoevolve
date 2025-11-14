@@ -133,7 +133,6 @@ class Evaluator:
         self,
         program_code: str,
         program_id: str = "",
-        iteration: Optional[int] = None,
     ) -> Dict[str, float]:
         """
         Evaluate a program and return scores
@@ -141,53 +140,11 @@ class Evaluator:
         Args:
             program_code: Code to evaluate
             program_id: Optional ID for logging
-            iteration: Optional iteration number (set as OPENEVOLVE_ITERATION env var for the program)
 
         Returns:
             Dictionary of metric name to score
         """
         start_time = time.time()
-
-        # Save current environment variables that we'll temporarily modify
-        old_iteration_env = os.environ.get('OPENEVOLVE_ITERATION')
-        old_num_problems_env = os.environ.get('MATH_EVAL_PROBLEMS')
-        old_agent_model_env = os.environ.get('OPENEVOLVE_MODEL')
-
-        # Set environment variables for the evaluation
-        # These can be read by evolved programs to configure their behavior
-        if iteration is not None:
-            os.environ['OPENEVOLVE_ITERATION'] = str(iteration)
-
-        if self.config.num_problems is not None:
-            os.environ['MATH_EVAL_PROBLEMS'] = str(self.config.num_problems)
-
-        if self.config.agent_model is not None:
-            os.environ['OPENEVOLVE_MODEL'] = self.config.agent_model
-
-        try:
-            return await self._evaluate_program_internal(program_code, program_id, start_time)
-        finally:
-            # Restore previous environment variable values
-            def restore_env(var_name: str, old_value: Optional[str]):
-                if old_value is not None:
-                    os.environ[var_name] = old_value
-                else:
-                    os.environ.pop(var_name, None)
-
-            restore_env('OPENEVOLVE_ITERATION', old_iteration_env)
-            restore_env('MATH_EVAL_PROBLEMS', old_num_problems_env)
-            restore_env('OPENEVOLVE_MODEL', old_agent_model_env)
-
-    async def _evaluate_program_internal(
-        self,
-        program_code: str,
-        program_id: str,
-        start_time: float,
-    ) -> Dict[str, float]:
-        """
-        Internal method that actually performs the evaluation
-        (separated to ensure environment variable cleanup in finally block)
-        """
         program_id_str = f" {program_id}" if program_id else ""
 
         # Check if artifacts are enabled
@@ -483,23 +440,16 @@ class Evaluator:
                 stage2_eval_result = self._process_evaluation_result(stage2_result)
             except asyncio.TimeoutError:
                 logger.warning(f"Stage 2 evaluation timed out after {self.config.timeout}s")
-                # Return low score for timeout (don't use Stage 1 score as it's misleading)
-                # Programs that timeout on Stage 2 should be scored low, not high
-                return EvaluationResult(
-                    metrics={
-                        "stage1_passed": stage1_eval_result.metrics.get("validation_passed", 1.0),
-                        "stage2_passed": 0.0,
-                        "accuracy": 0.0,  # Low score for timeout
-                        "avg_llm_calls": 0.0,  # No data available for timeout
-                        "combined_score": 0.1,  # Small non-zero score so it's not completely discarded
-                        "timeout": True,
-                    },
-                    artifacts={
-                        **stage1_eval_result.artifacts,
+                # Capture stage 2 failure, but keep stage 1 results
+                stage1_eval_result.artifacts.update(
+                    {
                         "stage2_timeout": True,
                         "failure_stage": "stage2",
-                    },
+                    }
                 )
+                stage1_eval_result.metrics["stage2_passed"] = 0.0
+                stage1_eval_result.metrics["timeout"] = True
+                return stage1_eval_result
             except Exception as e:
                 logger.error(f"Error in stage 2 evaluation: {str(e)}")
                 # Capture stage 2 failure, but keep stage 1 results
@@ -552,26 +502,16 @@ class Evaluator:
                 stage3_eval_result = self._process_evaluation_result(stage3_result)
             except asyncio.TimeoutError:
                 logger.warning(f"Stage 3 evaluation timed out after {self.config.timeout}s")
-                # Return partial score for Stage 3 timeout
-                # Use Stage 2 accuracy but penalize with low combined_score
-                stage2_accuracy = merged_result.metrics.get("accuracy", 0.0)
-                stage2_llm_calls = merged_result.metrics.get("avg_llm_calls", 0.0)
-                return EvaluationResult(
-                    metrics={
-                        "stage1_passed": merged_result.metrics.get("stage1_passed", 1.0),
-                        "stage2_passed": merged_result.metrics.get("stage2_passed", 1.0),
-                        "stage3_passed": 0.0,
-                        "accuracy": stage2_accuracy,  # Keep Stage 2 accuracy
-                        "avg_llm_calls": stage2_llm_calls,  # Keep Stage 2 LLM calls
-                        "combined_score": stage2_accuracy * 0.5,  # Penalize timeout (50% of Stage 2 score)
-                        "timeout": True,
-                    },
-                    artifacts={
-                        **merged_result.artifacts,
+                # Capture stage 3 failure, but keep previous results
+                merged_result.artifacts.update(
+                    {
                         "stage3_timeout": True,
                         "failure_stage": "stage3",
-                    },
+                    }
                 )
+                merged_result.metrics["stage3_passed"] = 0.0
+                merged_result.metrics["timeout"] = True
+                return merged_result
             except Exception as e:
                 logger.error(f"Error in stage 3 evaluation: {str(e)}")
                 # Capture stage 3 failure, but keep previous results

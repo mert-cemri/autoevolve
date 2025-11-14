@@ -114,7 +114,7 @@ async def run_iteration_with_shared_db(
 
         # Evaluate the child program
         child_id = str(uuid.uuid4())
-        result.child_metrics = await evaluator.evaluate_program(child_code, child_id, iteration=iteration)
+        result.child_metrics = await evaluator.evaluate_program(child_code, child_id)
 
         # Handle artifacts if they exist
         artifacts = evaluator.get_pending_artifacts(child_id)

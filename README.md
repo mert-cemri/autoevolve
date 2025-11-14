@@ -9,13 +9,13 @@
 *Turn your LLMs into autonomous code optimizers that discover breakthrough algorithms*
 
 <p align="center">
-  <a href="https://github.com/codelion/openevolve/stargazers"><img src="https://img.shields.io/github/stars/codelion/openevolve?style=social" alt="GitHub stars"></a>
+  <a href="https://github.com/algorithmicsuperintelligence/openevolve/stargazers"><img src="https://img.shields.io/github/stars/algorithmicsuperintelligence/openevolve?style=social" alt="GitHub stars"></a>
   <a href="https://pypi.org/project/openevolve/"><img src="https://img.shields.io/pypi/v/openevolve" alt="PyPI version"></a>
   <a href="https://pypi.org/project/openevolve/"><img src="https://img.shields.io/pypi/dm/openevolve" alt="PyPI downloads"></a>
-  <a href="https://github.com/codelion/openevolve/blob/main/LICENSE"><img src="https://img.shields.io/github/license/codelion/openevolve" alt="License"></a>
+  <a href="https://github.com/algorithmicsuperintelligence/openevolve/blob/main/LICENSE"><img src="https://img.shields.io/github/license/algorithmicsuperintelligence/openevolve" alt="License"></a>
 </p>
 
-[🚀 **Quick Start**](#quick-start) • [**Examples**](#examples-gallery) • [**System Messages**](#crafting-effective-system-messages) • [**Discussions**](https://github.com/codelion/openevolve/discussions)
+[🚀 **Quick Start**](#quick-start) • [**Examples**](#examples-gallery) • [**System Messages**](#crafting-effective-system-messages) • [**Discussions**](https://github.com/algorithmicsuperintelligence/openevolve/discussions)
 
 *From random search to state-of-the-art: Watch your code evolve in real-time*
 
@@ -251,7 +251,7 @@ pip install openevolve
 <summary><b>🔧 Development Install</b></summary>
 
 ```bash
-git clone https://github.com/codelion/openevolve.git
+git clone https://github.com/algorithmicsuperintelligence/openevolve.git
 cd openevolve
 pip install -e ".[dev]"
 ```
@@ -263,10 +263,10 @@ pip install -e ".[dev]"
 
 ```bash
 # Pull the image
-docker pull ghcr.io/codelion/openevolve:latest
+docker pull ghcr.io/algorithmicsuperintelligence/openevolve:latest
 
 # Run an example
-docker run --rm -v $(pwd):/app ghcr.io/codelion/openevolve:latest \
+docker run --rm -v $(pwd):/app ghcr.io/algorithmicsuperintelligence/openevolve:latest \
   examples/function_minimization/initial_program.py \
   examples/function_minimization/evaluator.py --iterations 100
 ```
@@ -761,7 +761,7 @@ python scripts/visualizer.py --path examples/function_minimization/openevolve_ou
 - [ ] **Neurosymbolic Reasoning**: Combine neural and symbolic approaches
 - [ ] **Human-AI Collaboration**: Interactive evolution with human feedback
 
-Want to contribute? Check out our [roadmap discussions](https://github.com/codelion/openevolve/discussions/categories/roadmap)!
+Want to contribute? Check out our [roadmap discussions](https://github.com/algorithmicsuperintelligence/openevolve/discussions/categories/roadmap)!
 
 ## FAQ
 
@@ -838,8 +838,8 @@ Just set the `api_base` in your config to point to your endpoint.
 
 Thanks to all our amazing contributors who make OpenEvolve possible!
 
-<a href="https://github.com/codelion/openevolve/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=codelion/openevolve" />
+<a href="https://github.com/algorithmicsuperintelligence/openevolve/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=algorithmicsuperintelligence/openevolve" />
 </a>
 
 ### **Contributing**
@@ -853,7 +853,7 @@ We welcome contributions! Here's how to get started:
 5. 📝 **Commit** with a clear message
 6. 🚀 **Push** and create a Pull Request
 
-**New to open source?** Check out our [Contributing Guide](CONTRIBUTING.md) and look for [`good-first-issue`](https://github.com/codelion/openevolve/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) labels!
+**New to open source?** Check out our [Contributing Guide](CONTRIBUTING.md) and look for [`good-first-issue`](https://github.com/algorithmicsuperintelligence/openevolve/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) labels!
 
 ### **Academic & Research**
 
@@ -872,7 +872,7 @@ If you use OpenEvolve in your research, please cite:
   author = {Asankhaya Sharma},
   year = {2025},
   publisher = {GitHub},
-  url = {https://github.com/codelion/openevolve}
+  url = {https://github.com/algorithmicsuperintelligence/openevolve}
 }
 ```
 ---

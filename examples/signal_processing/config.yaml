@@ -5,15 +5,14 @@ log_level: "INFO"
 
 # LLM configuration
 llm:
-  primary_model: "gpt-5-mini"
+  primary_model: "gemini-2.5-flash-lite-preview-06-17"
   primary_model_weight: 0.8
-  secondary_model: "gpt-5-nano"
+  secondary_model: "gemini-2.5-flash"
   secondary_model_weight: 0.2
-  api_base: "https://api.openai.com/v1"
+  api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.6
   top_p: 0.95
   max_tokens: 32000
-  timeout: 180  # Increased timeout for LLM API calls
 
 # Prompt configuration
 prompt:

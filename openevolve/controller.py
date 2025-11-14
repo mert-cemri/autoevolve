@@ -154,6 +154,7 @@ class OpenEvolve:
         if self.config.random_seed is not None:
             self.config.database.random_seed = self.config.random_seed
 
+        self.config.database.novelty_llm = self.llm_ensemble
         self.database = ProgramDatabase(self.config.database)
 
         self.evaluator = Evaluator(
@@ -191,62 +192,6 @@ class OpenEvolve:
         else:
             self.evolution_tracer = None
 
-        # Initialize add-only memory store (only if enabled in config)
-        self.memory_store = None
-        if self.config.memory.enabled:
-            try:
-                import os as _oe_os
-                # Set snapshot path: use config path or default to output_dir/memory_snapshot.json
-                # If loading from snapshot, use snapshot_path for loading but write to output_dir
-                load_path = None
-                if self.config.memory.snapshot_path:
-                    load_path = self.config.memory.snapshot_path
-                    # Write to output_dir, not the source snapshot (to avoid overwriting source)
-                    snapshot_path = os.path.join(self.output_dir, "memory_snapshot.json")
-                else:
-                    snapshot_path = os.path.join(self.output_dir, "memory_snapshot.json")
-                _oe_os.environ["MEMORY_SNAPSHOT_PATH"] = snapshot_path
-                # Set embedding model from config
-                _oe_os.environ["OPENAI_EMBED_MODEL"] = self.config.memory.embed_model
-                from memory.in_memory import InMemoryMemoryStore as _OEInMemoryMemoryStore
-                self.memory_store = _OEInMemoryMemoryStore()
-
-                # Load from existing snapshot if configured
-                if self.config.memory.load_from_snapshot:
-                    if load_path is None:
-                        load_path = snapshot_path
-                    if os.path.exists(load_path):
-                        try:
-                            entries_count, embeddings_count = self.memory_store.load_from_snapshot(load_path)
-                            logger.info(
-                                f"Loaded existing memory snapshot: {entries_count} entries, "
-                                f"{embeddings_count} embeddings. Continuing evolution with accumulated knowledge."
-                            )
-                        except Exception as load_exc:
-                            logger.warning(
-                                f"Failed to load memory snapshot from {load_path}: {load_exc}. "
-                                f"Starting with empty memory store.",
-                                exc_info=True,
-                            )
-                    else:
-                        logger.info(
-                            f"Memory snapshot not found at {load_path}. Starting with empty memory store."
-                        )
-
-                logger.info(
-                    f"Memory store initialized successfully (snapshot: {snapshot_path}, "
-                    f"embed_model: {self.config.memory.embed_model}, "
-                    f"semantic_search_topk: {self.config.memory.semantic_search_topk})"
-                )
-            except Exception as _init_exc:
-                logger.warning(
-                    f"Memory store initialization failed; continuing without memory. Error: {_init_exc}",
-                    exc_info=True,
-                )
-                self.memory_store = None
-        else:
-            logger.debug("Memory store disabled in config")
-
         # Initialize improved parallel processing components
         self.parallel_controller = None
 
@@ -278,6 +223,41 @@ class OpenEvolve:
         """Load the initial program from file"""
         with open(self.initial_program_path, "r") as f:
             return f.read()
+
+    async def _generate_island_seeds(self, initial_program: Program, num_islands: int, start_iteration: int) -> List[Program]:
+        """Generate N variations of initial program for island seeding"""
+        seeds = [initial_program]  # Island 0 gets original
+
+        prompt_template = "Rewrite this code with a different approach while keeping the same functionality:\n\n{code}\n\nProvide only the code."
+
+        for i in range(1, num_islands):
+            variation_code = await self.llm_ensemble.generate(
+                prompt=prompt_template.format(code=initial_program.code),
+                temperature=0.9
+            )
+
+            # Clean markdown fences from start/end only
+            if "```" in variation_code:
+                lines = variation_code.split("\n")
+                if lines and lines[0].strip().startswith("```"):
+                    lines = lines[1:]
+                if lines and lines[-1].strip().startswith("```"):
+                    lines = lines[:-1]
+                variation_code = "\n".join(lines)
+
+            variation_code = variation_code.strip()
+            variation_id = str(uuid.uuid4())
+            metrics = await self.evaluator.evaluate_program(variation_code, variation_id)
+
+            seeds.append(Program(
+                id=variation_id,
+                code=variation_code,
+                language=self.config.language,
+                metrics=metrics,
+                iteration_found=start_iteration
+            ))
+
+        return seeds
 
     async def run(
         self,
@@ -318,11 +298,11 @@ class OpenEvolve:
 
         if should_add_initial:
             logger.info("Adding initial program to database")
-            initial_program_id = str(uuid.uuid4())
 
-            # Evaluate the initial program
+            # Evaluate initial program
+            initial_program_id = str(uuid.uuid4())
             initial_metrics = await self.evaluator.evaluate_program(
-                self.initial_program_code, initial_program_id, iteration=start_iteration
+                self.initial_program_code, initial_program_id
             )
 
             initial_program = Program(
@@ -333,23 +313,27 @@ class OpenEvolve:
                 iteration_found=start_iteration,
             )
 
-            self.database.add(initial_program)
+            # Generate and distribute seed programs across islands
+            num_islands = self.config.database.num_islands
+            logger.info(f"Generating {num_islands} seed programs for islands")
+
+            seed_programs = await self._generate_island_seeds(initial_program, num_islands, start_iteration)
+
+            for island_idx, seed in enumerate(seed_programs):
+                self.database.add(seed, target_island=island_idx)
+
+            logger.info(f"Distributed {len(seed_programs)} seed programs across {num_islands} islands")
 
             # Check if combined_score is present in the metrics
             if "combined_score" not in initial_metrics:
-                # Calculate average of numeric metrics
                 numeric_metrics = [
-                    v
-                    for v in initial_metrics.values()
+                    v for v in initial_metrics.values()
                     if isinstance(v, (int, float)) and not isinstance(v, bool)
                 ]
                 if numeric_metrics:
                     avg_score = sum(numeric_metrics) / len(numeric_metrics)
                     logger.warning(
-                        f"⚠️  No 'combined_score' metric found in evaluation results. "
-                        f"Using average of all numeric metrics ({avg_score:.4f}) for evolution guidance. "
-                        f"For better evolution results, please modify your evaluator to return a 'combined_score' "
-                        f"metric that properly weights different aspects of program performance."
+                        f"⚠️  No 'combined_score' metric found. Using average ({avg_score:.4f})."
                     )
         else:
             logger.info(
@@ -363,21 +347,6 @@ class OpenEvolve:
                 self.config, self.evaluation_file, self.database, self.evolution_tracer,
                 file_suffix=self.config.file_suffix
             )
-
-            # Wire memory store and logging path into the parallel controller
-            try:
-                self.parallel_controller.memory_store = getattr(self, "memory_store", None)
-                import os as _oe_os
-                self.parallel_controller.memory_log_path = _oe_os.path.join(self.output_dir, "memory_add_log.jsonl")
-                if self.parallel_controller.memory_store:
-                    logger.info("Memory store wired to parallel controller")
-                else:
-                    logger.info("No memory store available for parallel controller")
-            except Exception as _wire_exc:
-                logger.warning(
-                    f"Failed to wire memory store to parallel controller: {_wire_exc}",
-                    exc_info=True,
-                )
 
             # Set up signal handlers for graceful shutdown
             def signal_handler(signum, frame):

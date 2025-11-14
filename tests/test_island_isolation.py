@@ -24,37 +24,6 @@ class TestIslandIsolation(unittest.TestCase):
         self.database = ProgramDatabase(self.config.database)
         self.evaluation_file = "mock_evaluator.py"
 
-    def test_worker_island_mapping(self):
-        """Test that workers are correctly mapped to islands"""
-        controller = ProcessParallelController(self.config, self.evaluation_file, self.database)
-
-        # Check mapping is correct
-        expected_mapping = {
-            0: 0,  # Worker 0 -> Island 0
-            1: 1,  # Worker 1 -> Island 1
-            2: 2,  # Worker 2 -> Island 2
-            3: 0,  # Worker 3 -> Island 0
-            4: 1,  # Worker 4 -> Island 1
-            5: 2,  # Worker 5 -> Island 2
-        }
-
-        self.assertEqual(controller.worker_island_map, expected_mapping)
-
-    def test_uneven_worker_distribution(self):
-        """Test mapping when workers don't divide evenly into islands"""
-        self.config.evaluator.parallel_evaluations = 7  # Not divisible by 3
-
-        controller = ProcessParallelController(self.config, self.evaluation_file, self.database)
-
-        # Island 0 should get 3 workers, islands 1 and 2 get 2 each
-        island_worker_counts = {0: 0, 1: 0, 2: 0}
-        for worker_id, island_id in controller.worker_island_map.items():
-            island_worker_counts[island_id] += 1
-
-        self.assertEqual(island_worker_counts[0], 3)
-        self.assertEqual(island_worker_counts[1], 2)
-        self.assertEqual(island_worker_counts[2], 2)
-
     def test_submit_iteration_uses_correct_island(self):
         """Test that _submit_iteration samples from the specified island"""
         controller = ProcessParallelController(self.config, self.evaluation_file, self.database)
@@ -116,21 +85,6 @@ class TestIslandIsolation(unittest.TestCase):
 
                 # Check that correct islands were sampled
                 self.assertEqual(sampled_islands, [0, 1, 2, 0])
-
-    def test_fewer_workers_than_islands(self):
-        """Test handling when there are fewer workers than islands"""
-        self.config.evaluator.parallel_evaluations = 2  # Only 2 workers for 3 islands
-
-        controller = ProcessParallelController(self.config, self.evaluation_file, self.database)
-
-        # Workers should be distributed across available islands
-        expected_mapping = {
-            0: 0,  # Worker 0 -> Island 0
-            1: 1,  # Worker 1 -> Island 1
-            # Island 2 has no dedicated worker
-        }
-
-        self.assertEqual(controller.worker_island_map, expected_mapping)
 
     def test_database_current_island_restoration(self):
         """Test that database current_island is properly restored after sampling"""
@@ -269,36 +223,6 @@ class TestIslandMigration(unittest.TestCase):
         migrant_suffix_count = sum(1 for p in self.database.programs.values() if "_migrant_" in p.id)
         self.assertEqual(migrant_suffix_count, 0, 
                         "No programs should have _migrant_ suffixes with new implementation")
-
-
-class TestWorkerPinningEdgeCases(unittest.TestCase):
-    """Test edge cases for worker-to-island pinning"""
-
-    def test_single_island(self):
-        """Test behavior with only one island"""
-        config = Config()
-        config.database.num_islands = 1
-        config.evaluator.parallel_evaluations = 4
-
-        database = ProgramDatabase(config.database)
-        controller = ProcessParallelController(config, "test.py", database)
-
-        # All workers should map to island 0
-        expected_mapping = {0: 0, 1: 0, 2: 0, 3: 0}
-        self.assertEqual(controller.worker_island_map, expected_mapping)
-
-    def test_single_worker(self):
-        """Test behavior with only one worker"""
-        config = Config()
-        config.database.num_islands = 5
-        config.evaluator.parallel_evaluations = 1
-
-        database = ProgramDatabase(config.database)
-        controller = ProcessParallelController(config, "test.py", database)
-
-        # Single worker should map to island 0
-        expected_mapping = {0: 0}
-        self.assertEqual(controller.worker_island_map, expected_mapping)
 
 
 if __name__ == "__main__":

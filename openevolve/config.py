@@ -5,9 +5,12 @@ Configuration handling for OpenEvolve
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import yaml
+
+if TYPE_CHECKING:
+    from openevolve.llm.base import LLMInterface
 
 
 @dataclass
@@ -197,11 +200,6 @@ class PromptConfig:
     num_top_programs: int = 3
     num_diverse_programs: int = 2
 
-    # Memory-based examples (from semantic search)
-    num_similar_parent_best: int = 3  # Number of best improvements from similar parents to show
-    num_similar_parent_worst: int = 3  # Number of worst regressions from similar parents to show
-    include_similar_parent_worst: bool = True  # Whether to show negative examples
-
     # Template stochasticity
     use_template_stochasticity: bool = True
     template_variations: Dict[str, List[str]] = field(default_factory=dict)
@@ -250,6 +248,7 @@ class DatabaseConfig:
     population_size: int = 1000
     archive_size: int = 100
     num_islands: int = 5
+    programs_per_island: Optional[int] = None
 
     # Selection parameters
     elite_selection_ratio: float = 0.1
@@ -282,21 +281,15 @@ class DatabaseConfig:
     # Random seed for reproducible sampling
     random_seed: Optional[int] = 42
 
-    # Adaptive exploration/exploitation
-    use_adaptive_search: bool = False
-    adaptive_window_size: int = 10  # Number of recent iterations to track
-    adaptive_min_exploration: float = 0.1  # Minimum exploration ratio
-    adaptive_max_exploration: float = 0.7  # Maximum exploration ratio
-
-    # Gradient-based parent selection (overrides adaptive if enabled)
-    use_gradient_selection: bool = False  # Use gradient scores for parent selection
-
     # Artifact storage
     artifacts_base_path: Optional[str] = None  # Defaults to db_path/artifacts
     artifact_size_threshold: int = 32 * 1024  # 32KB threshold
     cleanup_old_artifacts: bool = True
     artifact_retention_days: int = 30
 
+    novelty_llm: Optional["LLMInterface"] = None
+    embedding_model: Optional[str] = None
+    similarity_threshold: float = 0.99
 
 @dataclass
 class EvaluatorConfig:
@@ -326,15 +319,11 @@ class EvaluatorConfig:
     enable_artifacts: bool = True
     max_artifact_storage: int = 100 * 1024 * 1024  # 100MB per program
 
-    # Domain-specific settings (can be read by evolved programs via environment variables)
-    num_problems: Optional[int] = None  # Number of test problems (set via MATH_EVAL_PROBLEMS env var)
-    agent_model: Optional[str] = None   # LLM model for agents to use (set via OPENEVOLVE_MODEL env var)
-
 
 @dataclass
 class EvolutionTraceConfig:
     """Configuration for evolution trace logging"""
-
+    
     enabled: bool = False
     format: str = "jsonl"  # Options: "jsonl", "json", "hdf5"
     include_code: bool = False
@@ -342,17 +331,6 @@ class EvolutionTraceConfig:
     output_path: Optional[str] = None
     buffer_size: int = 10
     compress: bool = False
-
-
-@dataclass
-class MemoryConfig:
-    """Configuration for memory store (semantic memory for evolution)"""
-
-    enabled: bool = False
-    snapshot_path: Optional[str] = None
-    load_from_snapshot: bool = False
-    embed_model: str = "text-embedding-3-small"
-    semantic_search_topk: int = 5
 
 
 @dataclass
@@ -374,7 +352,6 @@ class Config:
     database: DatabaseConfig = field(default_factory=DatabaseConfig)
     evaluator: EvaluatorConfig = field(default_factory=EvaluatorConfig)
     evolution_trace: EvolutionTraceConfig = field(default_factory=EvolutionTraceConfig)
-    memory: MemoryConfig = field(default_factory=MemoryConfig)
 
     # Evolution settings
     diff_based_evolution: bool = True
@@ -400,7 +377,7 @@ class Config:
 
         # Update top-level fields
         for key, value in config_dict.items():
-            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace", "memory"] and hasattr(config, key):
+            if key not in ["llm", "prompt", "database", "evaluator", "evolution_trace"] and hasattr(config, key):
                 setattr(config, key, value)
 
         # Update nested configs
@@ -425,8 +402,6 @@ class Config:
             config.evaluator = EvaluatorConfig(**config_dict["evaluator"])
         if "evolution_trace" in config_dict:
             config.evolution_trace = EvolutionTraceConfig(**config_dict["evolution_trace"])
-        if "memory" in config_dict:
-            config.memory = MemoryConfig(**config_dict["memory"])
 
         return config
 

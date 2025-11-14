@@ -4,8 +4,6 @@ Prompt sampling for OpenEvolve
 
 import logging
 import random
-import json
-import os
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from openevolve.config import PromptConfig
@@ -86,32 +84,7 @@ class PromptSampler:
         Returns:
             Dictionary with 'system' and 'user' keys
         """
-        # Lightweight structured logging of inputs for debugging/inspection
-        summary = {
-            "evolution_round": evolution_round,
-            "language": language,
-            "diff_based_evolution": diff_based_evolution,
-            "feature_dimensions": list(feature_dimensions or []),
-            "program_metrics_keys": list(program_metrics.keys()) if isinstance(program_metrics, dict) else [],
-            "previous_programs_count": len(previous_programs or []),
-            "top_programs_count": len(top_programs or []),
-            "inspirations_count": len(inspirations or []),
-            "artifacts_keys": list((program_artifacts or {}).keys()) if isinstance(program_artifacts, dict) else [],
-            "current_program_chars": len(current_program or ""),
-            "parent_program_chars": len(parent_program or ""),
-            "previous_ids": [p.get("id") for p in (previous_programs or []) if isinstance(p, dict) and p.get("id")],
-            "top_ids": [p.get("id") for p in (top_programs or []) if isinstance(p, dict) and p.get("id")],
-            "inspiration_ids": [p.get("id") for p in (inspirations or []) if isinstance(p, dict) and p.get("id")],
-        }
-        # Hardcoded JSONL append for prompt input summaries
-        try:
-            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(json.dumps({"type": "inputs", **summary}, ensure_ascii=False) + "\n")
-        except Exception:
-            logger.debug("PromptSampler.build_prompt: failed to append inputs to prompt_builder_logs.txt", exc_info=True)
         # Select template based on evolution mode (with overrides)
-        # import pdb; pdb.set_trace()
         if template_key:
             # Use explicitly provided template key
             user_template_key = template_key
@@ -147,14 +120,6 @@ class PromptSampler:
             previous_programs, top_programs, inspirations, language, feature_dimensions
         )
 
-        # Append memory-based similar parent changes if available
-        similar_parent_changes = kwargs.get("similar_parent_changes", [])
-        similar_section = self._format_similar_parent_changes(
-            similar_parent_changes or [], language, feature_dimensions
-        )
-        if similar_section:
-            evolution_history = evolution_history + "\n\n" + similar_section
-
         # Format artifacts section if enabled and available
         artifacts_section = ""
         if self.config.include_artifacts and program_artifacts:
@@ -169,27 +134,6 @@ class PromptSampler:
         fitness_score = get_fitness_score(program_metrics, feature_dimensions)
         feature_coords = format_feature_coordinates(program_metrics, feature_dimensions)
 
-        # Log intermediate computed context (details)
-        try:
-            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
-            details = {
-                "type": "details",
-                "evolution_round": evolution_round,
-                "template_key": user_template_key,
-                "fitness_score": fitness_score,
-                "feature_coords": feature_coords,
-                "metrics_preview": metrics_str.split("\n")[:8],
-                "improvement_areas_preview": (improvement_areas.split("\n") if isinstance(improvement_areas, str) else []),
-                "previous_programs_count": len(previous_programs or []),
-                "top_programs_count": len(top_programs or []),
-                "inspirations_count": len(inspirations or []),
-                "artifacts_present": bool(program_artifacts),
-            }
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(json.dumps(details, ensure_ascii=False) + "\n")
-        except Exception:
-            logger.debug("PromptSampler.build_prompt: failed to append details to prompt_builder_logs.txt", exc_info=True)
-
         # Format the final user message
         user_message = user_template.format(
             metrics=metrics_str,
@@ -203,27 +147,6 @@ class PromptSampler:
             artifacts=artifacts_section,
             **kwargs,
         )
-
-        # Hardcoded JSONL append for final prompt text
-        try:
-            _log_path = "/Users/cusgadmin/Documents/AutoEvolve_Math_MAS/autoevolve/prompt_builder_logs.jsonl"
-            with open(_log_path, "a", encoding="utf-8") as _f:
-                _f.write(
-                    json.dumps(
-                        {
-                            "type": "prompt",
-                            "evolution_round": evolution_round,
-                            "language": language,
-                            "diff_based_evolution": diff_based_evolution,
-                            "system": system_message,
-                            "user": user_message,
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-        except Exception:
-            logger.debug("PromptSampler.build_prompt: failed to append prompt to prompt_builder_logs.txt", exc_info=True)
 
         return {
             "system": system_message,
@@ -243,165 +166,6 @@ class PromptSampler:
             else:
                 formatted_parts.append(f"- {name}: {value}")
         return "\n".join(formatted_parts)
-
-    def _format_similar_parent_changes(
-        self,
-        similar_parent_changes: List[Dict[str, Any]],
-        language: str,
-        feature_dimensions: Optional[List[str]] = None,
-    ) -> str:
-        """Format similar-parent best/worst changes section without truncation.
-
-        Selection is bounded by counts only (no code truncation), mirroring top/diverse behavior.
-        Counts are controlled via PromptConfig:
-          - num_similar_parent_best (default 3)
-          - num_similar_parent_worst (default 3)
-          - include_similar_parent_worst (default true)
-        """
-        if not similar_parent_changes:
-            return ""
-
-        # Use PromptConfig knobs
-        topn = max(0, int(self.config.num_similar_parent_best))
-        worstn = max(0, int(self.config.num_similar_parent_worst))
-        include_worst = bool(self.config.include_similar_parent_worst)
-
-        # Separate with available deltas
-        with_deltas = [c for c in similar_parent_changes if isinstance(c.get("delta_combined_score"), (int, float))]
-        if not with_deltas:
-            return ""
-
-        # Best (positive delta) and worst (negative delta)
-        best = [c for c in with_deltas if c["delta_combined_score"] > 0]
-        worst = [c for c in with_deltas if c["delta_combined_score"] < 0]
-        best.sort(key=lambda x: x["delta_combined_score"], reverse=True)
-        worst.sort(key=lambda x: x["delta_combined_score"])  # most negative first
-        best = best[: min(topn, len(best))]
-        worst = worst[: min(worstn, len(worst))] if include_worst else []
-
-        if not best and not worst:
-            return ""
-
-        lines: List[str] = []
-        lines.append("## Similar Parents: Prior Changes from Similar Starting Points")
-        lines.append("")
-        lines.append(
-            "Below are examples of what happened when we evolved programs that STARTED from similar code "
-            "to your current program. These examples show similar PROBLEM STRUCTURES, not solutions to copy."
-        )
-        lines.append("")
-        lines.append("**GRADIENT INTERPRETATION:** Examples are ranked by their **gradient** = improvement / code distance. "
-                     "High gradient means large improvement from small, focused changes (very efficient). "
-                     "Low gradient means small improvement from large changes (inefficient). "
-                     "Focus on learning from high-gradient examples.")
-        lines.append("")
-        lines.append("**INTENTION:** Use these examples to:")
-        lines.append("- **LEARN STRATEGIC PATTERNS** from best examples (e.g., 'hexagonal layouts worked well', "
-                     "'iterative refinement helped') - extract the STRATEGY, not the specific code")
-        lines.append("- **AVOID FAILURE MODES** from worst examples (e.g., 'over-constraining led to poor results') "
-                     "- understand WHY they failed, not what the code was")
-        lines.append("- **INNOVATE BEYOND** these examples - your goal is to CREATE A BETTER SOLUTION that "
-                     "OUTPERFORMS these examples, not to match or copy them")
-        lines.append("")
-        lines.append("**⚠️ CRITICAL PITFALLS TO AVOID:**")
-        lines.append("- ❌ DON'T copy these solutions exactly - similarity means starting point, not solution")
-        lines.append("- ❌ DON'T converge to local patterns shown here - explore NEW directions")
-        lines.append("- ❌ DON'T treat best examples as recipes - use them to understand WHAT worked, not HOW to replicate")
-        lines.append("- ❌ DON'T study worst examples in detail - use them to know WHAT to avoid, not as curiosities")
-        lines.append("- ❌ DON'T match these examples - your solution should BEAT them, achieving superior performance")
-        lines.append("")
-        lines.append("**HOW TO USE THESE EXAMPLES:**")
-        lines.append("- **Best examples:** Extract HIGH-LEVEL STRATEGIES (patterns, approaches, principles) "
-                     "that led to improvements. Focus on WHY they worked, not WHAT the code was.")
-        lines.append("- **Worst examples:** Identify the FAILURE MODES and ensure you avoid similar mistakes. "
-                     "Understand WHAT went wrong at a strategic level.")
-        lines.append("- **Your task:** Create a UNIQUE, INNOVATIVE solution that builds on successful patterns, "
-                     "avoids failure modes, and SURPASSES all these examples in performance.")
-        lines.append("")
-        lines.append("Remember: These examples show similar STARTING POINTS, not templates to follow. "
-                     "Your solution should be BETTER than all of them.")
-        lines.append("")
-
-        def fmt_item(idx: int, rec: Dict[str, Any]) -> str:
-            pid = rec.get("parent_id") or rec.get("parent")
-            cid = rec.get("child_id") or rec.get("child")
-            p_comb = rec.get("parent_combined_score")
-            c_comb = rec.get("child_combined_score")
-            delta = rec.get("delta_combined_score")
-            p_code = rec.get("parent_code") or ""
-            c_code = rec.get("child_code") or ""
-            change_summary = rec.get("change_summary")
-            parent_metrics = rec.get("parent_metrics") if isinstance(rec.get("parent_metrics"), dict) else {}
-            child_metrics = rec.get("child_metrics") if isinstance(rec.get("child_metrics"), dict) else {}
-
-            # Extract gradient and distance for gradient-based evolution
-            gradient = rec.get("gradient")
-            distance = rec.get("distance")
-
-            # Build a concise header; include IDs if available
-            header = f"### Example {idx}: Δ={delta:+.4f} (parent={p_comb} → child={c_comb})"
-
-            # Add gradient information if available
-            if gradient is not None:
-                # Determine efficiency label based on gradient magnitude
-                if abs(gradient) > 1.0:
-                    efficiency = "very efficient"
-                elif abs(gradient) > 0.3:
-                    efficiency = "moderately efficient"
-                else:
-                    efficiency = "inefficient"
-
-                header += f" | Gradient={gradient:+.3f} ({efficiency})"
-                if distance is not None:
-                    header += f" | Distance={distance:.3f}"
-
-            if pid or cid:
-                header += f" | parent={pid} → child={cid}"
-
-            # Optional change summary
-            summary_block = ""
-            if isinstance(change_summary, str) and change_summary.strip():
-                summary_block = f"\nChanges: {change_summary.strip()}\n"
-
-            # Optional metrics blocks
-            metrics_block = ""
-            try:
-                p_metrics_str = self._format_metrics(parent_metrics) if parent_metrics else ""
-                c_metrics_str = self._format_metrics(child_metrics) if child_metrics else ""
-                if p_metrics_str or c_metrics_str:
-                    metrics_parts = []
-                    if p_metrics_str:
-                        metrics_parts.append(f"Parent metrics:\n{p_metrics_str}")
-                    if c_metrics_str:
-                        metrics_parts.append(f"Child metrics:\n{c_metrics_str}")
-                    metrics_block = "\n" + "\n\n".join(metrics_parts) + "\n"
-            except Exception:
-                metrics_block = ""
-
-            body = (
-                (summary_block + metrics_block if (summary_block or metrics_block) else "")
-                + f"```{language}\n# Parent\n{p_code}\n```\n\n"
-                + f"```{language}\n# Child\n{c_code}\n```"
-            )
-            return header + "\n" + body
-
-        if best:
-            lines.append("\n### Best prior changes (positive delta)")
-            for i, rec in enumerate(best, 1):
-                try:
-                    lines.append(fmt_item(i, rec))
-                except Exception:
-                    continue
-
-        if worst:
-            lines.append("\n### Regressions to avoid (negative delta)")
-            for i, rec in enumerate(worst, 1):
-                try:
-                    lines.append(fmt_item(i, rec))
-                except Exception:
-                    continue
-
-        return "\n\n".join(lines)
 
     def _identify_improvement_areas(
         self,

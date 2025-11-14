@@ -57,24 +57,6 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--secondary-model", help="Secondary LLM model name", default=None)
 
-    # Search strategy selection
-    strategy_group = parser.add_mutually_exclusive_group()
-    strategy_group.add_argument(
-        "--best-of-n",
-        action="store_true",
-        help="Use Best-of-N search strategy (N independent lineages)"
-    )
-    strategy_group.add_argument(
-        "--beam-search",
-        action="store_true",
-        help="Use Beam Search strategy (keep top M, branch to N)"
-    )
-    strategy_group.add_argument(
-        "--mcts",
-        action="store_true",
-        help="Use MCTS strategy (Monte Carlo Tree Search with UCT)"
-    )
-
     return parser.parse_args()
 
 
@@ -95,23 +77,6 @@ async def main_async() -> int:
     if not os.path.exists(args.evaluation_file):
         print(f"Error: Evaluation file '{args.evaluation_file}' not found")
         return 1
-
-    # Determine search strategy from CLI arguments
-    strategy_name = None
-    if args.best_of_n:
-        strategy_name = "best_of_n"
-    elif args.beam_search:
-        strategy_name = "beam_search"
-    elif args.mcts:
-        strategy_name = "mcts"
-
-    # If strategy is specified, auto-select config file if not provided
-    if strategy_name and not args.config:
-        base_dir = os.path.dirname(args.initial_program)
-        default_config = os.path.join(base_dir, f"config_{strategy_name}.yaml")
-        if os.path.exists(default_config):
-            args.config = default_config
-            print(f"Auto-selected config: {default_config}")
 
     # Create config object with command-line overrides
     config = None
@@ -139,31 +104,15 @@ async def main_async() -> int:
             for i, model in enumerate(config.llm.models):
                 print(f"  Model {i+1}: {model.name} (weight: {model.weight})")
 
-    # Initialize with appropriate strategy
+    # Initialize OpenEvolve
     try:
-        if strategy_name:
-            # Use strategy-aware controller
-            from openevolve.strategy_controller import OpenEvolveWithStrategy
-
-            print(f"\n🔍 Using search strategy: {strategy_name.upper().replace('_', '-')}")
-            openevolve = OpenEvolveWithStrategy(
-                initial_program_path=args.initial_program,
-                evaluation_file=args.evaluation_file,
-                strategy_name=strategy_name,
-                config=config,
-                config_path=args.config if config is None else None,
-                output_dir=args.output,
-            )
-        else:
-            # Use default MAP-Elites
-            print(f"\n🔍 Using default MAP-Elites search strategy")
-            openevolve = OpenEvolve(
-                initial_program_path=args.initial_program,
-                evaluation_file=args.evaluation_file,
-                config=config,
-                config_path=args.config if config is None else None,
-                output_dir=args.output,
-            )
+        openevolve = OpenEvolve(
+            initial_program_path=args.initial_program,
+            evaluation_file=args.evaluation_file,
+            config=config,
+            config_path=args.config if config is None else None,
+            output_dir=args.output,
+        )
 
         # Load from checkpoint if specified
         if args.checkpoint:
@@ -171,11 +120,10 @@ async def main_async() -> int:
                 print(f"Error: Checkpoint directory '{args.checkpoint}' not found")
                 return 1
             print(f"Loading checkpoint from {args.checkpoint}")
-            if hasattr(openevolve, 'strategy') and hasattr(openevolve.strategy, 'load'):
-                openevolve.strategy.load(args.checkpoint)
-            else:
-                openevolve.database.load(args.checkpoint)
-            print(f"Checkpoint loaded successfully")
+            openevolve.database.load(args.checkpoint)
+            print(
+                f"Checkpoint loaded successfully (iteration {openevolve.database.last_iteration})"
+            )
 
         # Override log level if specified
         if args.log_level:

@@ -1,16 +1,7 @@
 results/
 examples/lm_eval/prompts/system_message.txt
 examples/lm_eval/prompts/evaluator_system_message.txt
-examples/math_mas/USAGE.txt
-examples/math_mas/CONFIGURATION_GUIDE.md
-examples/circle_packing/EXPERIMENTS.md
-examples/symbolic_regression/ANALYSIS_README.md
-ADAPTIVE_IMPLEMENTATION.md
-ADAPTIVE_SEARCH_DESIGN.md
-RUN_ADAPTIVE_EXPERIMENTS.md
-SIMPLE_ADAPTIVE.md
-GRADIENT_*.md
-ARCHIVE_*.md
+
 # Python
 __pycache__/
 *.py[cod]
@@ -62,13 +53,3 @@ htmlcov/
 # For SR
 secrets.yaml
 problems
-
-# Local secrets
-.env
-# Local debug logs
-prompt_builder_logs.jsonl
-try.txt
-
-# Claude-generated documentation
-CLAUDE.md
-CONFIGURATION_GUIDE.md
