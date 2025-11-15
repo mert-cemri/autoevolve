@@ -347,6 +347,7 @@ class ProcessParallelController:
             "random_seed": config.random_seed,
             "diff_based_evolution": config.diff_based_evolution,
             "max_code_length": config.max_code_length,
+            "k_children": config.k_children,
             "language": config.language,
             "file_suffix": self.file_suffix,
         }

@@ -249,13 +249,26 @@ class OpenEvolve:
             variation_id = str(uuid.uuid4())
             metrics = await self.evaluator.evaluate_program(variation_code, variation_id)
 
-            seeds.append(Program(
-                id=variation_id,
-                code=variation_code,
-                language=self.config.language,
-                metrics=metrics,
-                iteration_found=start_iteration
-            ))
+            # Check if evaluation was successful (has required metrics, no error)
+            if metrics.get("error") or metrics.get("validity", 1.0) == 0.0:
+                logger.warning(f"Seed variation {i} failed evaluation, using copy of original")
+                # Fall back to a copy of the original program for this island
+                fallback_program = Program(
+                    id=str(uuid.uuid4()),
+                    code=initial_program.code,
+                    language=initial_program.language,
+                    metrics=initial_program.metrics.copy(),
+                    iteration_found=start_iteration
+                )
+                seeds.append(fallback_program)
+            else:
+                seeds.append(Program(
+                    id=variation_id,
+                    code=variation_code,
+                    language=self.config.language,
+                    metrics=metrics,
+                    iteration_found=start_iteration
+                ))
 
         return seeds
 
