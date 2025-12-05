@@ -1,0 +1,107 @@
+# Online Bin Packing with Multi-Child Generation
+# Tests Phase 1-3 of multi-child generation:
+# - Multiple diverse children per iteration (3 during exploration, 1 during exploitation)
+# - Hybrid static + LLM approach summarization
+# - Auto-select strategy (keep all ≤3 passing threshold)
+# - Generation and evaluation error retry (2 retries = 3 total attempts each)
+
+# General settings
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+random_seed: 42
+
+# LLM configuration
+llm:
+  primary_model: "gpt-5"
+  api_base: "https://api.openai.com/v1"
+  primary_model_weight: 1.0
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 600
+
+# Database configuration with Exploration/Exploitation ratios
+database:
+  population_size: 100
+  archive_size: 20
+
+  # Island-based evolution settings
+  num_islands: 5                   # Number of separate populations
+  migration_interval: 5            # Migrate every 50 generations
+  migration_rate: 0.1               # Migrate 10% of top programs
+
+  use_adaptive_search: true
+  adaptive_window_size: 20
+  adaptive_min_exploration: 0.1
+  adaptive_max_exploration: 0.7
+
+  # Exploitation sampling method: "uniform", "weighted", or "ucb"
+  exploitation_sampling: "uniform"
+  # Exploration sampling method: "uniform", "weighted", or "ucb"
+  exploration_sampling: "uniform"
+
+  # Selection parameters
+  elite_selection_ratio: 0.1
+  exploration_ratio: 0.3
+  exploitation_ratio: 0.7
+  # Note: diversity_metric fixed to "edit_distance"
+
+  # Feature map dimensions for MAP-Elites
+  # Default if not specified: ["complexity", "diversity"]
+  # Comment out the line below to use the defaults
+  # feature_dimensions: ["complexity", "diversity"]
+  feature_bins: 10
+  # Can also use per-dimension bins:
+  # feature_bins:
+  #   performance: 20
+  #   correctness: 10
+
+# Prompt configuration
+prompt:
+  num_top_programs: 3
+  num_diverse_programs: 2
+  use_template_stochasticity: true
+
+# Evaluator configuration
+evaluator:
+  timeout: 300
+  max_retries: 3
+  cascade_evaluation: false
+  parallel_evaluations: 4
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false
+max_code_length: 60000
+
+max_generation_retries: 2  # Number of retries for generation failures (2 retries = 3 total attempts)
+max_evaluation_error_retries: 2  # Number of retries for generation when evaluation fails (2 retries = 3 total attempts)
+
+lr_scheduler:
+  scheduler_type: "warmup_cosine"
+  initial_lr: 3
+  min_lr: 2
+  max_lr: 25  # Increased from 10 to allow larger algorithmic changes during exploration
+  warmup_iterations: 15
+  cosine_cycles: 1.0
+
+# Multi-Child Generation (NEW - Phase 1-3)
+multi_child:
+  enabled: true
+
+  # Adaptive number of children based on sampling mode
+  num_children_exploitation: 1  # Conservative: refine best solution
+  num_children_exploration: 3   # Diverse: explore 3 orthogonal approaches
+
+  # Selection strategy
+  selection_strategy: "auto"           # Auto-select ≤3, top-k for >3
+  auto_select_threshold: 3             # Keep all if ≤3 children
+  top_k: 2                             # If >3, keep top 2 diverse
+  min_score_threshold: 0.2             # Minimum score to consider
+  min_diversity_threshold: 0.3         # Minimum diversity for top-k
+
+  # Approach summarization (Phase 2)
+  use_approach_summarization: true     # Use hybrid static + LLM analysis
+  code_preview_chars: 10000            # Code chars for LLM summary
+  summarization_max_tokens: 300        # Max tokens for summary

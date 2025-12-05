@@ -1,0 +1,223 @@
+# Paradigm Generation Configuration
+# ================================
+# This file defines modular prompt components for breakthrough idea generation.
+# Each section can be enabled/disabled or customized without changing code.
+#
+# To add new guidance:
+#   1. Add to the appropriate category below
+#   2. Follow the format: "- condition: ... guidance: ..."
+#   3. The system will automatically include enabled categories in the prompt
+#
+# To disable a category: set enabled: false
+# To add new categories: add a new section following the same structure
+
+# =============================================================================
+# PROBLEM TYPE TECHNIQUES
+# =============================================================================
+# These are condition-based guidance for specific problem types.
+# Each technique is included when its condition matches the problem.
+
+problem_type_techniques:
+  enabled: true
+  description: "Proven effective techniques for different problem types"
+  
+  techniques:
+    - id: repair_problems
+      condition: "If the evaluator compares outputs to ground truth or measures reconstruction quality"
+      guidance: |
+        For repair/reconstruction problems, use heuristic-based approaches that exploit structural 
+        relationships and invariants. A complete repair approach should: (1) **detect** violations 
+        by checking structural constraints (symmetry, conservation, consistency), (2) **correct** 
+        violations using simple heuristics (averaging, interpolation, copying from consistent parts), 
+        (3) **estimate confidence** from data consistency. **Key insight:** Optimization solvers 
+        (minimize, least_squares, linprog) often fail on repair problems because they over-constrain 
+        - prefer rule-based heuristics.
+
+    - id: dependency_ordering
+      condition: "If your Step 4 analysis found dependencies/conflicts between decisions"
+      guidance: |
+        For problems where order matters due to dependencies/conflicts, analyze dependency structure 
+        from evaluator logic, build dependency graph/DAG from conflict/constraint analysis, use 
+        topological sort with critical path optimization (e.g., scipy.sparse.csgraph.topological_sort), 
+        and exploit parallelism by grouping non-conflicting items. For sophisticated global ordering, 
+        consider pairwise preference ranking and spectral ranking (numpy.linalg.eig on preference 
+        matrix to extract global ordering via top eigenvector, then argsort).
+
+    - id: graph_structures
+      condition: "If the Current Program uses graph structures (NetworkX)"
+      guidance: |
+        Match graph algorithms to problem structure - tree algorithms (steiner_tree, 
+        minimum_spanning_tree) for problems with shared structure, flow algorithms 
+        (min_cost_flow, network_simplex) for resource distribution, shortest path for routing. 
+        **Key insight:** When multiple targets share common paths/edges, tree-based approaches 
+        can significantly reduce aggregate cost by exploiting shared structure.
+
+    - id: continuous_optimization
+      condition: "For continuous optimization with constraints"
+      guidance: |
+        **PREFER scipy.optimize.minimize** with constraint-handling methods to solve the problem 
+        directly (optimizes all variables together, most reliable). Key: optimize all variables 
+        together, multiple initial guesses, feasible starting point, flat array structure, clear 
+        constraint formulation. **Alternative:** Geometric approaches (e.g., scipy.spatial.Voronoi) 
+        or reformulations can work. **CRITICAL:** Do NOT use multi-stage optimization.
+
+    - id: filtering_noise
+      condition: "For robust filtering/noise reduction"
+      guidance: |
+        Use methods that handle outliers better than mean-based (e.g., median or percentile-based 
+        statistics). Use filtering functions directly (e.g., scipy.signal.medfilt) - do NOT use 
+        scipy.optimize.minimize to tune filter parameters.
+
+    - id: performance_critical
+      condition: "For performance-critical operations"
+      guidance: |
+        Use numpy vectorization (broadcasting, vectorized operations) instead of Python loops.
+
+    - id: sequential_data
+      condition: "For sequential/streaming/query data"
+      guidance: |
+        Use per-instance processing with efficient data structures (numpy arrays, pandas operations). 
+        For simple ordering problems, prefer numpy.argsort over complex graph algorithms. For 
+        sophisticated ordering, consider multi-criteria argsort or spectral ranking.
+
+    - id: discrete_assignment
+      condition: "For discrete assignment problems (without dependencies)"
+      guidance: |
+        Use greedy heuristics, local search, scipy.optimize.linprog for linear constraints, or 
+        scipy.optimize.linear_sum_assignment for one-to-one assignment. For load balancing: 
+        numpy.argsort for priority-based greedy, numpy.argpartition for top-K selection, 
+        numpy.percentile for threshold-based decisions. **Key insight:** Simple greedy approaches 
+        with good ordering often outperform complex optimization. **CRITICAL:** Do NOT use 
+        scipy.optimize.minimize for discrete problems.
+
+    - id: discrete_objectives
+      condition: "For discrete optimization with non-linear objectives (e.g., ratios)"
+      guidance: |
+        Evaluate the PROSPECTIVE objective after each choice. For ratio objectives, evaluate the 
+        FULL ratio directly (numerator/denominator), NOT just the numerator. For MIN-MAX ratio: 
+        binary search on target + greedy placement + local improvements (swaps).
+
+# =============================================================================
+# LIBRARY RECOMMENDATIONS
+# =============================================================================
+# Guidance on which libraries/functions to use for different scenarios.
+
+library_recommendations:
+  enabled: true
+  description: "Effective library techniques to consider"
+  
+  recommended:
+    - name: "scipy.optimize.minimize"
+      use_for: "constrained continuous optimization"
+      
+    - name: "scipy.signal (medfilt, savgol_filter, wiener)"
+      use_for: "robust filtering and noise reduction"
+      
+    - name: "numpy vectorization (einsum, matrix ops)"
+      use_for: "performance-critical operations"
+      
+    - name: "numpy.argsort"
+      use_for: "ordering/sequencing, priority-based greedy assignment - often simplest and most effective"
+      
+    - name: "pandas.DataFrame.groupby"
+      use_for: "signature-based caching/grouping in data processing"
+      
+    - name: "scipy.optimize.linprog"
+      use_for: "linear programming with linear constraints"
+      
+    - name: "scipy.optimize.linear_sum_assignment"
+      use_for: "one-to-one assignment problems (Hungarian algorithm)"
+      
+    - name: "numpy.percentile"
+      use_for: "robust threshold-based allocation and load balancing"
+      
+    - name: "numpy.argpartition"
+      use_for: "efficient top-K selection without full sorting - useful for quota-based allocation"
+      
+    - name: "itertools.combinations"
+      use_for: "pairwise swaps and local search improvements"
+
+  avoid:
+    - name: "DEAP, genetic algorithm libraries"
+      reason: "Domain-specific, complex, requires pip install"
+      
+    - name: "Custom research algorithms"
+      reason: "Not standard, hard to verify"
+      
+    - name: "scipy.optimize.minimize for discrete problems"
+      reason: "Continuous optimizers cannot handle discrete constraint violations"
+
+# =============================================================================
+# ANTI-PATTERNS
+# =============================================================================
+# Critical rules about what NOT to do.
+
+anti_patterns:
+  enabled: true
+  description: "Critical implementation rules to follow"
+  
+  rules:
+    - id: no_multi_stage
+      rule: "Do NOT use multi-stage optimization"
+      detail: |
+        Do NOT call one function then optimize its output. Deterministic setup code 
+        followed by a single optimization call is allowed.
+      
+    - id: no_minimize_for_tuning
+      rule: "Do NOT use scipy.optimize.minimize for hyperparameter tuning"
+      detail: |
+        Use minimize to solve the problem directly, NOT to tune parameters for another function.
+      
+    - id: no_minimize_for_discrete
+      rule: "Do NOT use scipy.optimize.minimize for discrete problems"
+      detail: |
+        Continuous optimizers cannot handle discrete constraint violations properly.
+      
+    - id: single_function_call
+      rule: "Each idea MUST be a single-function library call"
+      detail: |
+        Do NOT suggest multi-stage processing (e.g., "call A then call B").
+
+# =============================================================================
+# DIVERSITY REQUIREMENTS
+# =============================================================================
+# Rules for ensuring diverse breakthrough ideas.
+
+diversity_requirements:
+  enabled: true
+  description: "Requirements for generating diverse ideas"
+  
+  num_ideas: 3
+  
+  rules:
+    - "Each idea must use DIFFERENT libraries/techniques than failed attempts"
+    - "Each idea must target DIFFERENT metrics/aspects from the evaluator"
+    - "Each idea must be independently implementable"
+    - "Prefer clear implementations (different ≠ more complex)"
+
+# =============================================================================
+# OUTPUT FORMAT
+# =============================================================================
+# Structure for the generated paradigms.
+
+output_format:
+  enabled: true
+  
+  fields:
+    - name: "idea"
+      description: "Clear, direct idea with library/technique name"
+      example: "Use scipy.optimize.minimize with SLSQP"
+      
+    - name: "description"
+      description: "Detailed implementation guide (5-10 sentences)"
+      
+    - name: "what_to_optimize"
+      description: "Metrics/areas to focus on from evaluator analysis"
+      
+    - name: "cautions"
+      description: "Important implementation details to watch out for"
+      
+    - name: "approach_type"
+      description: "Exact [LIBRARY].[FUNCTION] format for tracking"
+      example: "scipy.optimize.minimize"
+

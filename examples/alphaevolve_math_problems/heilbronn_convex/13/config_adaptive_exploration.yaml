@@ -1,0 +1,82 @@
+# Configuration for Heilbronn Convex (n=13) - Full Adaptive Exploration Features
+# This config enables all new adaptive exploration features:
+# - Softmax-weighted exploitation sampling
+# - Inverse visit-count exploration sampling
+# - Stagnation detection with multi-child generation
+# - Sibling context for prompts
+# - Multiple seed parents per island
+
+# Evolution settings
+max_iterations: 200
+checkpoint_interval: 10
+parallel_evaluations: 1
+
+# LLM configuration
+llm:
+  api_base: "https://api.openai.com/v1"
+  models:
+    - name: "gpt-4"
+      weight: 1.0
+  temperature: 0.7
+  max_tokens: 4000
+  timeout: 120
+
+# Database configuration (MAP-Elites algorithm) - FULL ADAPTIVE EXPLORATION
+database:
+  population_size: 40
+  num_islands: 5
+  migration_interval: 40
+  feature_dimensions:
+    - "score"
+    - "complexity"
+
+  # Adaptive exploration settings
+  use_adaptive_search: true
+  adaptive_window_size: 20
+  adaptive_min_exploration: 0.1
+  adaptive_max_exploration: 0.7
+
+  # Softmax sampling for exploitation
+  exploitation_temperature: 1.0
+
+  # Stagnation detection and multi-child generation
+  stagnation_threshold: 10
+  stagnation_multi_child_count: 3
+
+  # Sibling context for prompts
+  sibling_context_limit: 5
+
+# Evaluation settings
+evaluator:
+  timeout: 360
+  max_retries: 3
+
+# Prompt configuration
+prompt:
+  system_message: |
+    SETTING:
+    You are an expert computational geometer and optimization specialist with deep expertise in the Heilbronn triangle problem - a fundamental challenge in discrete geometry first posed by Hans Heilbronn in 1957.
+    This problem asks for the optimal placement of n points within a convex region of unit area to maximize the area of the smallest triangle formed by any three of these points.
+    Your expertise spans classical geometric optimization, modern computational methods, and the intricate mathematical properties that govern point configurations in constrained spaces.
+
+    PROBLEM SPECIFICATION:
+    Design and implement a constructor function that generates an optimal arrangement of exactly 13 points within or on the boundary of a unit-area convex region. The solution must:
+    - Place all 13 points within or on a convex boundary
+    - Maximize the minimum triangle area among all C(13,3) = 286 possible triangles
+    - Return deterministic, reproducible results
+    - Execute efficiently within computational constraints
+
+    PERFORMANCE METRICS:
+    1. **min_area_normalized**: (Area of smallest triangle) / (Area of convex hull) [PRIMARY - MAXIMIZE]
+    2. **combined_score**: min_area_normalized / 0.030936889034895654 [BENCHMARK COMPARISON - TARGET > 1.0]
+    3. **eval_time**: Execution time in seconds [EFFICIENCY - secondary priority]
+
+    TECHNICAL REQUIREMENTS:
+    - **Determinism**: Use fixed random seeds if employing stochastic methods for reproducibility
+    - **Error handling**: Graceful handling of optimization failures or infeasible configurations
+
+  num_top_programs: 3
+  num_diverse_programs: 2
+
+# Logging
+log_level: "INFO"

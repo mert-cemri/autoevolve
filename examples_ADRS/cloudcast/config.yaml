@@ -1,0 +1,65 @@
+# Configuration for function minimization example
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gpt-5"
+  api_base: "https://api.openai.com/v1"
+  primary_model_weight: 1.0
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 900
+
+# Prompt configuration
+prompt:
+  system_message: |
+    You are an expert in cloud infrastructure optimization. Your task is to evolve the 
+    search_algorithm(src, dsts, G, num_partitions) function to minimize overall 
+    data transfer cost while meeting strict time constraints across multiple clouds. 
+    Focus on efficiently broadcasting input data to multiple destination nodes by leveraging 
+    parallel paths and overlapping transfers across networks. Use the BroadCastTopology 
+    class and make_nx_graph function to identify low-cost, high-throughput routes. 
+    Prioritize strategies that reduce redundant transfers, balance load across networks, 
+    and exploit multi-network topologies to minimize both latency and cost.
+  num_top_programs: 3
+  use_template_stochasticity: true
+
+# Database configuration
+database:
+  population_size: 50
+  archive_size: 20
+  num_islands: 3
+  elite_selection_ratio: 0.2
+  exploitation_ratio: 0.7
+
+  # Adaptive exploration settings
+  use_adaptive_search: true
+  adaptive_window_size: 20
+  adaptive_min_exploration: 0.1
+  adaptive_max_exploration: 0.7
+
+  # Softmax sampling for exploitation
+  exploitation_temperature: 1.0  # Controls sharpness of softmax (lower = more greedy)
+
+  # Stagnation detection and multi-child generation
+  stagnation_threshold: 10  # Iterations without improvement to trigger stagnation
+  stagnation_multi_child_count: 3  # Number of diverse children to generate on stagnation
+
+  # Sibling context for prompts
+  sibling_context_limit: 5  # Number of previous children to show in prompt
+
+
+# Evaluator configuration
+evaluator:
+  timeout: 60
+  cascade_evaluation: false
+  cascade_thresholds: [0.5, 0.75]
+  parallel_evaluations: 4
+  use_llm_feedback: false
+
+# Evolution settings
+diff_based_evolution: true
+allow_full_rewrites: false

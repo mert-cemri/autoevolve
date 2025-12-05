@@ -1,0 +1,96 @@
+# Configuration for Second Autocorrelation Inequality - Full Adaptive Exploration Features
+# This config enables all new adaptive exploration features:
+# - Softmax-weighted exploitation sampling
+# - Inverse visit-count exploration sampling
+# - Stagnation detection with multi-child generation
+# - Sibling context for prompts
+# - Multiple seed parents per island
+
+# Evolution settings
+max_iterations: 200
+checkpoint_interval: 10
+parallel_evaluations: 1
+
+# LLM configuration
+llm:
+  api_base: "https://api.openai.com/v1"
+  models:
+    - name: "gpt-4"
+      weight: 1.0
+  temperature: 0.7
+  max_tokens: 4000
+  timeout: 120
+
+# Database configuration (MAP-Elites algorithm) - FULL ADAPTIVE EXPLORATION
+database:
+  population_size: 40
+  num_islands: 5
+  migration_interval: 40
+  feature_dimensions:
+    - "score"
+    - "complexity"
+
+  # Adaptive exploration settings
+  use_adaptive_search: true
+  adaptive_window_size: 20
+  adaptive_min_exploration: 0.1
+  adaptive_max_exploration: 0.7
+
+  # Softmax sampling for exploitation
+  exploitation_temperature: 1.0
+
+  # Stagnation detection and multi-child generation
+  stagnation_threshold: 10
+  stagnation_multi_child_count: 3
+
+  # Sibling context for prompts
+  sibling_context_limit: 5
+
+# Evaluation settings
+evaluator:
+  timeout: 360
+  max_retries: 3
+
+# Prompt configuration
+prompt:
+  system_message: |
+    SETTING:
+    You are a world-class expert in functional analysis, harmonic analysis, numerical optimization, and AI-driven mathematical discovery. Your mission is to push the boundaries of a fundamental mathematical constant by evolving and optimizing Python implementations that discover novel functions achieving better lower bounds for the second autocorrelation inequality constant C2.
+
+    MATHEMATICAL PROBLEM CONTEXT:
+    **Core Problem**: Find a non-negative function f: R -> R that maximizes the constant C2 in the second autocorrelation inequality:
+    ||f * f||_2^2 <= C2 ||f * f||_1 ||f * f||_inf
+
+    **Mathematical Framework**:
+    - Objective: Maximize C2 = ||f * f||_2^2 / (||f * f||_1 ||f * f||_inf)
+    - Key simplification: ||f * f||_1 = (int f)^2, reducing to C2 = ||f * f||_2^2 / ((int f)^2 ||f * f||_inf)
+    - Convolution definition: (f * f)(x) = int_{-inf}^{inf} f(t)f(x-t) dt
+    - Norms: ||g||_1 = int|g|, ||g||_2 = (int|g|^2)^{1/2}, ||g||_inf = sup|g|
+    - Constraints: f(x) >= 0 for all x in R, int f > 0
+
+    **Historical Context & Current State**:
+    - Theoretical bounds: 0.88922 <= C2 <= 1 (Young's inequality provides upper bound)
+    - Current best lower bound: **0.8962799441554086** (achieved by Google's AlphaEvolve using step functions)
+    - **Target**: Surpass 0.8962799441554086 to establish a new world record
+    - Mathematical significance: This constant appears in harmonic analysis and has connections to the uncertainty principle
+
+    PERFORMANCE METRICS & SUCCESS CRITERIA:
+    **Primary Objective**:
+    - c2: The C2 constant achieved (MAXIMIZE THIS - any value > 0.8962799441554086 is groundbreaking)
+
+    **Secondary Metrics**:
+    - combined_score: c2 / 0.8962799441554086 (>1.0 means new world record)
+    - convergence_stability: Consistency across multiple runs
+    - function_complexity: Number of parameters/pieces in the discovered function
+    - computational_efficiency: Time to convergence
+
+    TECHNICAL REQUIREMENTS:
+    - Reproducibility: Fixed random seeds for ALL stochastic components
+    - Function Constraints: f(x) >= 0 everywhere, int f > 0
+    - Computational Efficiency: Leverage FFT for convolution when possible
+
+  num_top_programs: 3
+  num_diverse_programs: 2
+
+# Logging
+log_level: "INFO"

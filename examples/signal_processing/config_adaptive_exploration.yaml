@@ -1,0 +1,63 @@
+# Configuration for Real-Time Adaptive Signal Processing - Full Adaptive Exploration Features
+# This config enables all new adaptive exploration features:
+# - Softmax-weighted exploitation sampling
+# - Inverse visit-count exploration sampling
+# - Stagnation detection with multi-child generation
+# - Sibling context for prompts
+# - Multiple seed parents per island
+
+max_iterations: 100
+checkpoint_interval: 10
+log_level: "INFO"
+
+# LLM configuration
+llm:
+  primary_model: "gpt-5"
+  api_base: "https://api.openai.com/v1"
+  primary_model_weight: 1.0
+  temperature: 0.7
+  top_p: 0.95
+  max_tokens: 32000
+  timeout: 600
+
+# Prompt configuration
+prompt:
+  system_message: "You are an expert signal processing engineer specializing in real-time adaptive filtering algorithms. Your task is to improve a signal processing algorithm that filters volatile, non-stationary time series data using a sliding window approach. The algorithm must minimize noise while preserving signal dynamics with minimal computational latency and phase delay. Focus on the multi-objective optimization of: (1) Slope change minimization - reducing spurious directional reversals, (2) Lag error minimization - maintaining responsiveness, (3) Tracking accuracy - preserving genuine signal trends, and (4) False reversal penalty - avoiding noise-induced trend changes. Consider advanced techniques like adaptive filtering (Kalman filters, particle filters), multi-scale processing (wavelets, EMD), predictive enhancement (polynomial fitting, neural networks), and trend detection methods."
+  num_top_programs: 3
+  use_template_stochasticity: true
+
+# Database configuration - FULL ADAPTIVE EXPLORATION
+database:
+  population_size: 80
+  archive_size: 10
+  num_islands: 4
+  elite_selection_ratio: 0.15
+  exploitation_ratio: 0.65
+
+  # Adaptive exploration settings
+  use_adaptive_search: true
+  adaptive_window_size: 10
+  adaptive_min_exploration: 0.1
+  adaptive_max_exploration: 0.7
+
+  # Softmax sampling for exploitation
+  exploitation_temperature: 1.0
+
+  # Stagnation detection and multi-child generation
+  stagnation_threshold: 10
+  stagnation_multi_child_count: 3
+
+  # Sibling context for prompts
+  sibling_context_limit: 5
+
+# Evaluator configuration
+evaluator:
+  timeout: 120
+  cascade_evaluation: true
+  cascade_thresholds: [0.3, 0.6]
+  parallel_evaluations: 4
+  use_llm_feedback: false
+
+# Evolution settings
+diff_based_evolution: true
+max_code_length: 60000
